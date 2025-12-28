@@ -1,7 +1,13 @@
+// 转义正则特殊字符
+function escapeRegExp(string) {
+  return string.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
 class WordMarker {
   constructor() {
     this.markedWords = new Map();
     this.init();
+    this.initPageMarks(); // 新增初始化调用
   }
 
   init() {
@@ -18,12 +24,65 @@ class WordMarker {
     });
   }
 
+  // 新增方法：初始化页面标记
+  async initPageMarks() {
+    const marks = await this.getMarks();
+    const walker = document.createTreeWalker(
+      document.body,
+      NodeFilter.SHOW_TEXT,
+      null,
+      false
+    );
+
+    let node;
+    while (node = walker.nextNode()) {
+      if (node.parentNode.nodeName === 'SCRIPT' || node.parentNode.nodeName === 'STYLE') {
+        continue;
+      }
+
+      Object.values(marks).forEach((mark) => {
+        const regex = new RegExp(`\\b${escapeRegExp(mark.text)}\\b`, 'gi');
+        if (regex.test(node.nodeValue)) {
+          this.markExistingWord(node, mark);
+        }
+      });
+    }
+  }
+
+  // 辅助方法：标记已存在的单词
+  async markExistingWord(textNode, markData) {
+    const range = document.createRange();
+    const index = textNode.nodeValue.indexOf(markData.text);
+    
+    if (index >= 0) {
+      range.setStart(textNode, index);
+      range.setEnd(textNode, index + markData.text.length);
+      
+      const selection = window.getSelection();
+      selection.removeAllRanges();
+      selection.addRange(range);
+      
+      await this.markWord(selection, markData.text);
+    }
+  }
+
+  // 新增：获取所有标记
+  async getMarks() {
+    return new Promise(resolve => {
+      chrome.runtime.sendMessage(
+        {type: 'get_marks'},
+        (response) => resolve(response.marks)
+      );
+    });
+  }
+
   isAlreadyMarked(text) {
     for (const [_, word] of this.markedWords) {
       if (word.text === text) return true;
     }
     return false;
   }
+
 
   async markWord(selection, text) {
     const range = selection.getRangeAt(0);
