@@ -41,7 +41,7 @@ class WordMarker {
       }
 
       Object.values(marks).forEach((mark) => {
-        const regex = new RegExp(`\\b${escapeRegExp(mark.text)}\\b`, 'gi');
+        const regex = new RegExp(escapeRegExp(mark.text), 'gi');
         if (regex.test(node.nodeValue)) {
           this.markExistingWord(node, mark);
         }
