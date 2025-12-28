@@ -2,14 +2,23 @@
 <html>
 <head>
   <meta charset="UTF-8">
-  <title>英语单词学习助手</title>
+  <title>我的单词本</title>
   <link rel="stylesheet" href="popup.css">
 </head>
 <body>
-  <div class="container">
-    <h1>我的单词本</h1>
-    <div id="wordList" class="word-list"></div>
+  <div class="wordbook-container">
+    <div class="header">
+      <h1><span class="icon">📚</span> 单词本</h1>
+      <div class="search-box">
+        <input type="text" placeholder="搜索单词...">
+      </div>
+    </div>
+    
+    <div class="word-list" id="wordList">
+      <!-- 单词卡片将通过JS动态生成 -->
+    </div>
   </div>
+  
   <script src="popup.js"></script>
 </body>
 </html>

@@ -1,71 +1,101 @@
-// 单词存储管理
-const wordStore = {
-  // 添加/更新标记单词
-  addMarkedWord: async (wordInfo) => {
-    const words = await chrome.storage.local.get('markedWords');
-    const markedWords = words.markedWords || {};
-    markedWords[wordInfo.id] = wordInfo;
-    await chrome.storage.local.set({markedWords});
-  },
-
-  // 获取所有标记单词
-  getAllMarkedWords: async () => {
-    const data = await chrome.storage.local.get('markedWords');
-    return data.markedWords || {};
-  },
-
-  // 添加单词到存储
-  addWord: async (word, translation) => {
-    const words = await chrome.storage.local.get('words');
-    const wordsList = words.words || [];
-    
-    const exists = wordsList.some(w => w.word === word);
-    if (!exists) {
-      wordsList.push({
-        word,
-        translation,
-        addedAt: Date.now(),
-        reviewed: 0
-      });
-      await chrome.storage.local.set({words: wordsList});
-    }
-  },
-
-  // 获取所有单词
-  getAllWords: async () => {
-    const data = await chrome.storage.local.get('words');
-    return data.words || [];
-  }
+// 配置参数
+const config = {
+  maxWords: 50 // 最大保存单词数
 };
 
-// 测试用恒定翻译结果
-const translateAPI = {
-  translate: async (word) => {
-    return new Promise((resolve) => {
-      resolve(`${word}的测试翻译`);
+// 标记存储管理器
+class MarkStorage {
+  constructor() {
+    this.marksKey = 'saved_marks';
+    this.dictKey = 'word_dictionary';
+    this.initMessageHandlers();
+  }
+
+  // 初始化消息处理
+  initMessageHandlers() {
+    chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
+      switch(request.type) {
+        case 'save_mark':
+          this.handleSaveMark(request.mark, sendResponse);
+          return true;
+          
+        case 'get_marks':
+          this.handleGetMarks(sendResponse);
+          return true;
+          
+        case 'translate':
+          this.handleTranslate(request.word, sendResponse);
+          return true;
+      }
     });
   }
-};
 
-// 监听内容脚本的消息
-chrome.runtime.onMessage.addListener(
-  async (request, sender, sendResponse) => {
-    switch(request.type) {
-      case 'translate':
-        const translation = await translateAPI.translate(request.word);
-        await wordStore.addWord(request.word, translation);
-        sendResponse({translation});
-        break;
-        
-      case 'save_marked_word':
-        await wordStore.addMarkedWord(request.wordInfo);
-        sendResponse({success: true});
-        break;
-        
-      case 'get_marked_words':
-        const markedWords = await wordStore.getAllMarkedWords();
-        sendResponse({markedWords});
-        break;
+  // 处理保存标记
+  async handleSaveMark(mark, sendResponse) {
+    try {
+      // 保存标记HTML
+      const marks = await this.getMarks();
+      marks[mark.id] = {
+        text: mark.text,
+        html: mark.html,
+        timestamp: Date.now()
+      };
+      await chrome.storage.local.set({[this.marksKey]: marks});
+      
+      // 添加到单词本
+      await this.addToDictionary(mark.text);
+      
+      sendResponse({success: true});
+    } catch (error) {
+      sendResponse({error: error.message});
     }
   }
-);
+
+  // 处理获取标记
+  async handleGetMarks(sendResponse) {
+    const marks = await this.getMarks();
+    sendResponse({marks});
+  }
+
+  // 处理翻译请求
+  async handleTranslate(word, sendResponse) {
+    try {
+      // 测试用翻译
+      const translation = `${word}的翻译结果`;
+      
+      // 添加到单词本
+      await this.addToDictionary(word);
+      
+      sendResponse({translation});
+    } catch (error) {
+      sendResponse({error: error.message});
+    }
+  }
+
+  // 获取所有标记
+  async getMarks() {
+    const result = await chrome.storage.local.get(this.marksKey);
+    return result[this.marksKey] || {};
+  }
+
+  // 添加到单词本
+  async addToDictionary(word) {
+    const dict = await this.getDictionary();
+    if (!dict[word]) {
+      dict[word] = {
+        added: Date.now(),
+        reviewed: 0
+      };
+      await chrome.storage.local.set({[this.dictKey]: dict});
+    }
+  }
+
+  // 获取单词本
+  async getDictionary() {
+    const result = await chrome.storage.local.get(this.dictKey);
+    return result[this.dictKey] || {};
+  }
+}
+
+// 初始化
+new MarkStorage();

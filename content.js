@@ -1,114 +1,178 @@
-// 标记单词样式
-const highlightStyle = {
-  textDecoration: 'underline',
-  textDecorationColor: '#5a95f5',
-  textDecorationThickness: '2px',
-  cursor: 'pointer',
-  position: 'relative'
+// 标记样式配置
+const HIGHLIGHT_STYLE = {
+  underlineColor: '#1e90ff', // 蓝色下划线
+  underlineWidth: '2px',
+  translationBg: '#ffffff',
+  translationBorder: '#ccc'
 };
 
-// 标记选中的文本
-const markSelectedText = () => {
-  const selection = window.getSelection();
-  const selectedText = selection.toString().trim();
-  
-  if (selectedText) {
-    const range = selection.getRangeAt(0);
-    const span = document.createElement('span');
-    span.className = 'marked-word';
-    
-    // 为标记创建唯一ID
-    const wordId = 'word_' + Date.now() + Math.random().toString(36).substr(2,5);
-    
-    // 保存标记位置信息
-    const rect = range.getBoundingClientRect();
-    const wordInfo = {
-      id: wordId,
-      text: selectedText,
-      pageUrl: window.location.href,
-      position: {
-        x: rect.left,
-        y: rect.top,
-        width: rect.width,
-        height: rect.height
-      }
-    };
+// 单词标记管理器
+class WordMarker {
+  constructor() {
+    this.markedWords = new Map();
+    this.initEventListeners();
+    this.restoreMarks();
+  }
 
-    span.dataset.wordId = wordId;
-    Object.assign(span.style, highlightStyle);
+  // 初始化事件监听
+  initEventListeners() {
+    document.addEventListener('mouseup', this.handleSelection.bind(this));
+  }
+
+  // 处理文本选择
+  async handleSelection() {
+    const selection = window.getSelection();
+    const selectedText = selection.toString().trim();
+    if (!selectedText) return;
+
+    const range = selection.getRangeAt(0);
+    const markId = 'mark_' + Date.now();
     
+    // 创建标记元素
+    const markElement = this.createMarkElement(markId, range, selectedText);
+    
+    // 存储标记
+    this.markedWords.set(markId, {
+      element: markElement,
+      text: selectedText
+    });
+
+    // 获取并显示翻译
+    const translation = await this.getTranslation(selectedText);
+    this.showTranslation(markElement, translation);
+    
+    // 保存标记
+    this.saveMark(markId, selectedText, markElement.innerHTML);
+  }
+
+  // 创建标记元素
+  createMarkElement(id, range, text) {
+    const span = document.createElement('span');
+    span.className = 'word-mark';
+    span.dataset.markId = id;
+    span.style.textDecoration = `underline ${HIGHLIGHT_STYLE.underlineColor}`;
+    span.style.textDecorationThickness = HIGHLIGHT_STYLE.underlineWidth;
+    span.style.position = 'relative';
+    span.style.cursor = 'pointer';
+
     // 添加翻译容器
     const translationDiv = document.createElement('div');
-    translationDiv.className = 'word-translation';
+    translationDiv.className = 'translation-display';
     translationDiv.style.display = 'none';
     translationDiv.style.position = 'absolute';
     translationDiv.style.left = '0';
     translationDiv.style.top = '100%';
-    translationDiv.style.backgroundColor = 'white';
-    translationDiv.style.padding = '2px 5px';
+    translationDiv.style.backgroundColor = HIGHLIGHT_STYLE.translationBg;
+    translationDiv.style.border = `1px solid ${HIGHLIGHT_STYLE.translationBorder}`;
+    translationDiv.style.padding = '5px';
     translationDiv.style.borderRadius = '3px';
-    translationDiv.style.boxShadow = '0 2px 5px rgba(0,0,0,0.1)';
     translationDiv.style.zIndex = '1000';
+
+    // 添加悬停事件
+    span.addEventListener('mouseover', (e) => {
+      e.stopPropagation();
+      translationDiv.style.display = 'block';
+    });
     
+    span.addEventListener('mouseout', () => {
+      translationDiv.style.display = 'none';
+    });
+
     span.appendChild(range.cloneContents());
     span.appendChild(translationDiv);
     range.deleteContents();
     range.insertNode(span);
-    
-    // 保存标记
-    chrome.runtime.sendMessage({
-      type: 'save_marked_word',
-      wordInfo: wordInfo
-    });
 
-    // 点击显示翻译
-    span.addEventListener('click', async (e) => {
-      e.stopPropagation();
-      const word = span.firstChild.textContent;
-      const response = await chrome.runtime.sendMessage({
-        type: 'translate', 
-        word: word
+    return span;
+  }
+
+  // 获取翻译
+  async getTranslation(text) {
+    return new Promise((resolve) => {
+      chrome.runtime.sendMessage({
+        type: 'translate',
+        word: text
+      }, (response) => {
+        resolve(response.translation);
       });
-      
-      translationDiv.textContent = response.translation;
-      translationDiv.style.display = 'block';
+    });
+  }
+
+  // 显示翻译
+  showTranslation(element, translation) {
+    const translationDiv = element.querySelector('.translation-display');
+    if (translationDiv) {
+      translationDiv.textContent = translation;
+    }
+  }
+
+  // 保存标记
+  saveMark(id, text, html) {
+    chrome.runtime.sendMessage({
+      type: 'save_mark',
+      mark: { id, text, html }
+    });
+  }
+
+  // 恢复标记
+  async restoreMarks() {
+    const marks = await new Promise((resolve) => {
+      chrome.runtime.sendMessage({type: 'get_marks'}, (response) => {
+        resolve(response.marks);
+      });
     });
 
-    // 点击空白处隐藏翻译
-    document.addEventListener('click', (e) => {
-      if (!span.contains(e.target)) {
-        translationDiv.style.display = 'none';
+    Object.values(marks || {}).forEach(mark => {
+      const tempDiv = document.createElement('div');
+      tempDiv.innerHTML = mark.html;
+      const markElement = tempDiv.firstChild;
+      
+      // 放到原位置
+      const textNodes = this.findTextNodes(document.body, mark.text);
+      if (textNodes.length > 0) {
+        const range = document.createRange();
+        range.selectNodeContents(textNodes[0]);
+        range.surroundContents(markElement);
+        
+        // 重新添加事件
+        markElement.addEventListener('mouseover', (e) => {
+          const translationDiv = e.target.querySelector('.translation-display');
+          if (translationDiv) translationDiv.style.display = 'block';
+        });
+        
+        markElement.addEventListener('mouseout', (e) => {
+          const translationDiv = e.target.querySelector('.translation-display');
+          if (translationDiv) translationDiv.style.display = 'none';
+        });
+
+        this.markedWords.set(mark.id, {
+          element: markElement,
+          text: mark.text
+        });
       }
     });
   }
-};
 
-// 页面加载时恢复标记
-const restoreMarkedWords = async () => {
-  const response = await chrome.runtime.sendMessage({
-    type: 'get_marked_words'
-  });
-  
-  const markedWords = response.markedWords || {};
-  Object.values(markedWords)
-    .filter(word => word.pageUrl === window.location.href)
-    .forEach(word => {
-      const span = document.createElement('span');
-      span.className = 'marked-word-restored';
-      span.dataset.wordId = word.id;
-      Object.assign(span.style, highlightStyle);
-      
-      const textNode = document.createTextNode(word.text);
-      span.appendChild(textNode);
-      
-      // 尝试找到原位置插入
-      const element = document.elementFromPoint(word.position.x, word.position.y);
-      if (element) {
-        element.textContent = element.textContent.replace(word.text, span.outerHTML);
+  // 查找文本节点
+  findTextNodes(element, text) {
+    const nodes = [];
+    const walker = document.createTreeWalker(
+      element,
+      NodeFilter.SHOW_TEXT,
+      null,
+      false
+    );
+
+    let node;
+    while (node = walker.nextNode()) {
+      if (node.nodeValue.trim() === text.trim()) {
+        nodes.push(node);
       }
-    });
-};
+    }
+
+    return nodes;
+  }
+}
 
 // 初始化
-document.addEventListener('DOMContentLoaded', restoreMarkedWords);
-document.addEventListener('mouseup', markSelectedText);
+new WordMarker();
