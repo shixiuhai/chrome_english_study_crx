@@ -7,30 +7,11 @@ class ExtensionBackground {
       marks: 'word_marks'
     };
     
-    this.active = true;
     this.initMessageHandlers();
-    this.initLifecycleHandlers();
-  }
-
-  initLifecycleHandlers() {
-    chrome.runtime.onSuspend.addListener(() => {
-      this.active = false;
-      console.log('扩展即将被暂停');
-    });
-
-    chrome.runtime.onRestart.addListener(() => {
-      this.active = true;
-      console.log('扩展已重新加载');
-    });
   }
 
   initMessageHandlers() {
     chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
-      if (!this.active) {
-        sendResponse({error: 'Extension context invalidated'});
-        return false;
-      }
-      
       switch(request.type) {
         case 'translate':
           this.handleTranslation(request.word, sendResponse);
