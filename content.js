@@ -142,18 +142,10 @@ class WordMarker {
 
     const tooltip = document.createElement('div');
     tooltip.className = 'word-tooltip';
-    tooltip.textContent = translation;
-    tooltip.style.cssText = `
-      position: absolute;
-      left: 0;
-      top: 100%;
-      background: white;
-      padding: 5px;
-      border: 1px solid #ddd;
-      border-radius: 3px;
-      z-index: 1000;
-      display: none;
-    `;
+    const translationSpan = document.createElement('span');
+    translationSpan.className = 'translation-highlight';
+    translationSpan.textContent = translation;
+    tooltip.appendChild(translationSpan);
 
     // 改进的悬浮窗显示控制
     mark.addEventListener('mouseenter', () => {

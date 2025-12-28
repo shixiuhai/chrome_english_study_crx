@@ -1,0 +1,36 @@
+.word-mark {
+  text-decoration: underline #1e90ff 2px;
+  position: relative;
+  cursor: pointer;
+}
+
+.word-tooltip {
+  position: absolute;
+  left: 0;
+  top: 100%;
+  background: white;
+  padding: 8px;
+  border: 1px solid #ddd;
+  border-radius: 6px;
+  z-index: 1000;
+  display: none;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+  min-width: 120px;
+}
+
+.word-tooltip::before {
+  content: "";
+  position: absolute;
+  bottom: 100%;
+  left: 10px;
+  border-width: 6px;
+  border-style: solid;
+  border-color: transparent transparent white transparent;
+}
+
+.translation-highlight {
+  background-color: #fff9c4;
+  padding: 2px 4px;
+  border-radius: 3px;
+  color: #333;
+}
