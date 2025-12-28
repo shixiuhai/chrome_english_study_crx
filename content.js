@@ -120,6 +120,24 @@ class WordMarker {
     return false;
   }
 
+  async removeMark(markId) {
+    // 从Map中删除
+    this.markedWords.delete(markId);
+    
+    // 发送消息更新存储
+    chrome.runtime.sendMessage({
+      type: 'remove_mark',
+      markId
+    });
+    
+    // 找到并移除DOM元素
+    const markElement = document.querySelector(`[data-mark-id="${markId}"]`);
+    if (markElement) {
+      // 恢复原始文本
+      const text = markElement.textContent.replace(this.markedWords.get(markId)?.translation || '', '');
+      markElement.replaceWith(text);
+    }
+  }
 
   async markWord(selection, text) {
     const range = selection.getRangeAt(0);
@@ -140,6 +158,12 @@ class WordMarker {
     mark.style.position = 'relative';
     mark.style.cursor = 'pointer';
 
+    // 添加点击事件
+    mark.addEventListener('click', (e) => {
+      e.stopPropagation();
+      this.removeMark(id);
+    });
+
     const tooltip = document.createElement('div');
     tooltip.className = 'word-tooltip';
     const translationSpan = document.createElement('span');
@@ -148,11 +172,26 @@ class WordMarker {
     tooltip.appendChild(translationSpan);
 
     // 改进的悬浮窗显示控制
+    let hideTimeout;
     mark.addEventListener('mouseenter', () => {
+      clearTimeout(hideTimeout);
       tooltip.style.display = 'block';
     });
     
     mark.addEventListener('mouseleave', () => {
+      hideTimeout = setTimeout(() => {
+        if (!tooltip.matches(':hover')) {
+          tooltip.style.display = 'none';
+        }
+      }, 300);
+    });
+
+    // 监听tooltip的鼠标事件
+    tooltip.addEventListener('mouseenter', () => {
+      clearTimeout(hideTimeout);
+    });
+
+    tooltip.addEventListener('mouseleave', () => {
       tooltip.style.display = 'none';
     });
 
