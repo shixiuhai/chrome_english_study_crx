@@ -7,6 +7,14 @@ class WordBook {
     this.init();
   }
 
+  // 添加朗读方法
+  speakWord(word, lang = 'en-US') {
+    const utterance = new SpeechSynthesisUtterance(word);
+    utterance.lang = lang;
+    utterance.rate = 0.9;
+    speechSynthesis.speak(utterance);
+  }
+
   async init() {
     this.setupLoadingUI();
     try {
@@ -68,6 +76,7 @@ class WordBook {
         <div class="word-header">
           <span class="word-text">${wordData.word}</span>
           <div class="word-actions">
+            <button class="speak-btn" title="朗读">🔊</button>
             <button class="edit-btn" title="编辑">✏️</button>
             <button class="delete-btn" title="删除">🗑️</button>
           </div>
@@ -201,5 +210,13 @@ class WordBook {
 
 // 初始化单词本
 document.addEventListener('DOMContentLoaded', () => {
-  new WordBook();
+  const wordBook = new WordBook();
+  
+  // 添加全局朗读点击处理
+  document.addEventListener('click', (e) => {
+    if (e.target.classList.contains('speak-btn')) {
+      const word = e.target.closest('.word-card').dataset.word;
+      wordBook.speakWord(word);
+    }
+  });
 });
