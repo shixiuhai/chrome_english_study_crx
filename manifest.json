@@ -4,6 +4,7 @@
   "version": "1.0",
   "description": "点击网页英文单词进行翻译和记录",
   "permissions": ["storage", "activeTab", "notifications"],
+  "host_permissions": ["https://60s.viki.moe/"],
   "background": {
     "service_worker": "background.js"
   },

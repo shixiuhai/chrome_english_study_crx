@@ -61,13 +61,30 @@ class ExtensionBackground {
   }
 
   async handleTranslation(word, sendResponse) {
-    // 临时翻译实现 - 用户可替换为真实API调用
-    const translation = `${word}的翻译`;
-    
-    // 保存到字典
-    await this.saveWord(word, translation);
-    
-    sendResponse({translation});
+    const requestOptions = {
+      method: 'GET',
+      redirect: 'follow'
+    };
+
+    try {
+      const response = await fetch(`https://60s.viki.moe/v2/fanyi?text=${encodeURIComponent(word)}&from=en&to=zh-CHS`, requestOptions);
+      if (!response.ok) {
+        throw new Error(`翻译API请求失败: ${response.status}`);
+      }
+      const result = await response.json();
+      const translation = result?.data?.target?.text || `${word}的翻译`;
+      
+      // 保存到字典
+      await this.saveWord(word, translation);
+      
+      sendResponse({translation});
+    } catch (error) {
+      console.error('翻译失败:', error);
+      // 回退到原虚拟翻译
+      const fallbackTranslation = `${word}的翻译`;
+      await this.saveWord(word, fallbackTranslation);
+      sendResponse({translation: fallbackTranslation});
+    }
   }
 
   async saveWord(word, translation) {
