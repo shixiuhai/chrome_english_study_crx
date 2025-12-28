@@ -36,11 +36,11 @@ class WordMarker {
         }
 
         const wordCount = countWords(text);
-        if (wordCount > 500) {
+        if (wordCount > 50) {
           chrome.runtime.sendMessage({
             type: 'show_notification',
             title: '单词数量限制',
-            message: '一次最多只能选中500个单词'
+            message: '一次最多只能选中50个单词'
           });
           return;
         }
