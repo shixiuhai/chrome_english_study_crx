@@ -47,6 +47,11 @@ class ExtensionBackground {
             .then(marks => sendResponse({marks}));
           return true;
           
+        case 'get_phonetics':
+          this.getPhonetics(request.word)
+            .then(phonetics => sendResponse({phonetics}));
+          return true;
+          
         case 'show_notification':
           chrome.notifications.create({
             type: 'basic',
@@ -74,10 +79,14 @@ class ExtensionBackground {
       const result = await response.json();
       const translation = result?.data?.target?.text || `${word}的翻译`;
       
-      // 保存到字典
+      // 保存到字典并获取音标
       await this.saveWord(word, translation);
       
-      sendResponse({translation});
+      const phonetics = await this.getPhonetics(word);
+      sendResponse({
+        translation,
+        phonetics
+      });
     } catch (error) {
       console.error('翻译失败:', error);
       // 回退到原虚拟翻译
@@ -90,8 +99,10 @@ class ExtensionBackground {
   async saveWord(word, translation) {
     const dict = await this.getDictionary();
     if (!dict[word]) {
+      // 先创建基本词条
       dict[word] = {
         translation,
+        phonetics: await this.getPhonetics(word), // 获取音标
         added: Date.now(),
         reviewed: 0
       };
@@ -140,6 +151,54 @@ class ExtensionBackground {
       dict[word].translation = newTranslation;
       await chrome.storage.local.set({[this.storageKeys.words]: dict});
     }
+  }
+
+  async getPhonetics(word) {
+    try {
+      const response = await fetch(`https://api.dictionaryapi.dev/api/v2/entries/en/${word}`);
+      const data = await response.json();
+      
+      // 获取音标 - 优先取phonetic字段，其次取phonetics[0].text
+      let phoneticText = '';
+      let phoneticAudio = '';
+      
+      const entry = Array.isArray(data) ? data[0] : null;
+      if (entry) {
+        phoneticText = entry.phonetic ||
+                      entry.phonetics?.[0]?.text ||
+                      '';
+        
+        // 获取第一个有效的音频URL
+        const audioObj = entry.phonetics?.find(p => p.audio && p.audio.startsWith('http')) || {};
+        phoneticAudio = audioObj.audio || '';
+        
+        if (phoneticAudio) {
+          await chrome.storage.local.set({
+            [`audio_${word}`]: phoneticAudio
+          });
+        }
+      }
+      
+      return phoneticText;
+      
+    } catch (error) {
+      console.error('获取音标失败:', error);
+      return '';
+    }
+  }
+
+  async batchGetPhonetics(words) {
+    return Promise.all(words.map(word => this.getPhonetics(word)));
+  }
+
+  async batchUpdatePhonetics(updates) {
+    const dict = await this.getDictionary();
+    updates.forEach(({word, phonetics}) => {
+      if (dict[word]) {
+        dict[word].phonetics = phonetics;
+      }
+    });
+    await chrome.storage.local.set({[this.storageKeys.words]: dict});
   }
 }
 

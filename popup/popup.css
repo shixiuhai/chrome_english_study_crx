@@ -123,6 +123,13 @@ body {
   color: #666;
 }
 
+.word-phonetics {
+  margin: 4px 0;
+  font-size: 13px;
+  color: #888;
+  font-style: italic;
+}
+
 .word-meta {
   display: flex;
   justify-content: space-between;

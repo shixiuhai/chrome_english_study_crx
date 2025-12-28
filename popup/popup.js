@@ -8,21 +8,85 @@ class WordBook {
   }
 
   // 添加朗读方法
-  speakWord(word, lang = 'en-US') {
-    const utterance = new SpeechSynthesisUtterance(word);
-    utterance.lang = lang;
-    utterance.rate = 0.9;
-    speechSynthesis.speak(utterance);
+  async speakWord(word) {
+    try {
+      const audioUrl = await new Promise((resolve) => {
+        chrome.storage.local.get(`audio_${word}`, (result) => {
+          resolve(result[`audio_${word}`] || '');
+        });
+      });
+
+      if (audioUrl) {
+        // 使用API提供的真实发音
+        const audio = new Audio(audioUrl);
+        audio.play();
+      } else {
+        // 回退到浏览器TTS
+        const utterance = new SpeechSynthesisUtterance(word);
+        utterance.lang = 'en-US';
+        utterance.rate = 0.9;
+        speechSynthesis.speak(utterance);
+      }
+    } catch (error) {
+      console.error('播放发音失败:', error);
+      // 最终回退方案
+      const utterance = new SpeechSynthesisUtterance(word);
+      utterance.lang = 'en-US';
+      speechSynthesis.speak(utterance);
+    }
   }
 
   async init() {
     this.setupLoadingUI();
     try {
-      await this.loadWords();
+      await this.loadWordsWithPhonetics();
       this.renderWordList();
       this.setupEventListeners();
     } catch (error) {
       this.showError('加载单词本失败，请重试');
+    }
+  }
+
+  async loadWordsWithPhonetics() {
+    await this.loadWords();
+    
+    // 为没有音标的单词获取音标
+    for (const wordData of this.words) {
+      if (!wordData.phonetics) {
+        wordData.phonetics = await this.getPhonetics(wordData.word);
+        
+        // 更新存储
+        await new Promise(resolve => {
+          chrome.runtime.sendMessage({
+            type: 'update_phonetics',
+            word: wordData.word,
+            phonetics: wordData.phonetics
+          }, resolve);
+        });
+      }
+    }
+  }
+
+  async getPhonetics(word) {
+    try {
+      return await new Promise((resolve, reject) => {
+        chrome.runtime.sendMessage(
+          {type: 'get_phonetics', word},
+          response => {
+            if (chrome.runtime.lastError) {
+              return reject(chrome.runtime.lastError);
+            }
+            // 使用API返回的正确音标字段
+            const phoneticText = response?.phonetic ||
+                               response?.phonetics?.[0]?.text ||
+                               '';
+            resolve(phoneticText || '');
+          }
+        );
+      });
+    } catch (error) {
+      console.error('获取音标失败:', error);
+      return '';
     }
   }
 
@@ -37,8 +101,8 @@ class WordBook {
   async loadWords() {
     return new Promise((resolve) => {
       chrome.runtime.sendMessage(
-        {type: 'get_dictionary'}, 
-        (response) => {
+        {type: 'get_dictionary'},
+        async (response) => {  // 添加async标记
           if (chrome.runtime.lastError) {
             console.error('获取单词本失败:', chrome.runtime.lastError);
             this.showError('连接插件失败');
@@ -46,14 +110,27 @@ class WordBook {
             return;
           }
           
-          this.words = Object.entries(response?.dictionary || {}).map(([word, data]) => ({
-            word,
-            translation: data?.translation || '',
-            added: data?.added || Date.now(),
-            reviewed: data?.reviewed || 0
-          })).sort((a, b) => b.added - a.added);
-          
-          resolve();
+          try {
+            const entries = Object.entries(response?.dictionary || {});
+            const wordPromises = entries.map(async ([word, data]) => {
+              const phonetics = data?.phonetics || await this.getPhonetics(word);
+              return {
+                word,
+                translation: data?.translation || '',
+                phonetics,
+                added: data?.added || Date.now(),
+                reviewed: data?.reviewed || 0
+              };
+            });
+            
+            this.words = await Promise.all(wordPromises);
+            this.words.sort((a, b) => b.added - a.added);
+            resolve();
+          } catch (error) {
+            console.error('加载单词出错:', error);
+            this.showError('加载单词数据出错');
+            resolve([]);
+          }
         }
       );
     });
@@ -83,6 +160,7 @@ class WordBook {
         </div>
         <div class="word-body">
           <div class="word-translation">${wordData.translation || '暂无翻译'}</div>
+          ${wordData.phonetics ? `<div class="word-phonetics">/${wordData.phonetics}/</div>` : ''}
           <div class="word-meta">
             <span>添加于 ${new Date(wordData.added).toLocaleDateString()}</span>
             <span>复习次数: ${wordData.reviewed}</span>
