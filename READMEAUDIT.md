@@ -33,8 +33,8 @@ graph TB
 ## 4. 技术规范
 - **权限**：storage, activeTab, notifications
 - **API端点**：
-  - 词典API: https://api.dictionaryapi.dev/
-  - 音频资源: https://60s.viki.moe/
+  - 音标资源: https://api.dictionaryapi.dev/
+  - 词典API: https://60s.viki.moe/
 
 ## 5. 已知问题
 - 已修复：下划线移除时翻译文本错误问题
