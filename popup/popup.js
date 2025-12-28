@@ -10,32 +10,44 @@ class WordBook {
   // 添加朗读方法
   async speakWord(word) {
     try {
-      const audioUrl = await new Promise((resolve) => {
-        chrome.storage.local.get(`audio_${word}`, (result) => {
-          resolve(result[`audio_${word}`] || '');
-        });
-      });
-
-      if (audioUrl) {
-        // 使用API提供的真实发音
-        const audio = new Audio(audioUrl);
-        audio.play();
-      } else {
-        // 回退到浏览器TTS
-        const utterance = new SpeechSynthesisUtterance(word);
-        utterance.lang = 'en-US';
-        utterance.rate = 0.9;
-        speechSynthesis.speak(utterance);
+      // 词组直接使用TTS
+      if (word.includes(' ')) {
+        this.fallbackTTS(word);
+        return;
       }
+
+      // 尝试获取API音频URL
+      const phoneticsData = await this.getPhonetics(word);
+      if (phoneticsData.audioUrl) {
+        try {
+          const audio = new Audio(phoneticsData.audioUrl);
+          audio.preload = 'auto';
+          audio.onerror = () => this.fallbackTTS(word);
+          await audio.play();
+          return;
+        } catch (e) {
+          console.error('API音频播放失败:', e);
+        }
+      }
+      
+      // 回退到TTS
+      this.fallbackTTS(word);
     } catch (error) {
       console.error('播放发音失败:', error);
-      // 最终回退方案
-      const utterance = new SpeechSynthesisUtterance(word);
-      utterance.lang = 'en-US';
-      speechSynthesis.speak(utterance);
+      this.fallbackTTS(word);
     }
   }
-
+  
+  fallbackTTS(word) {
+    const utterance = new SpeechSynthesisUtterance(word);
+    utterance.lang = 'en-US';
+    utterance.rate = 0.9;
+    try {
+      speechSynthesis.speak(utterance);
+    } catch (e) {
+      console.error('TTS失败:', e);
+    }
+  }
   async init() {
     this.setupLoadingUI();
     try {
@@ -69,6 +81,11 @@ class WordBook {
 
   async getPhonetics(word) {
     try {
+      // 如果是词组(包含空格)，跳过音标获取
+      if (word.includes(' ')) {
+        return { phoneticText: '', audioUrl: '' };
+      }
+      
       return await new Promise((resolve, reject) => {
         chrome.runtime.sendMessage(
           {type: 'get_phonetics', word},
@@ -76,11 +93,7 @@ class WordBook {
             if (chrome.runtime.lastError) {
               return reject(chrome.runtime.lastError);
             }
-            // 使用API返回的正确音标字段
-            const phoneticText = response?.phonetic ||
-                               response?.phonetics?.[0]?.text ||
-                               '';
-            resolve(phoneticText || '');
+            resolve(response || { phoneticText: '', audioUrl: '' });
           }
         );
       });

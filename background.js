@@ -100,9 +100,10 @@ class ExtensionBackground {
     const dict = await this.getDictionary();
     if (!dict[word]) {
       // 先创建基本词条
+      const phoneticsData = await this.getPhonetics(word);
       dict[word] = {
         translation,
-        phonetics: await this.getPhonetics(word), // 获取音标
+        phonetics: phoneticsData.phoneticText, // 只存储音标文本
         added: Date.now(),
         reviewed: 0
       };
@@ -155,22 +156,37 @@ class ExtensionBackground {
 
   async getPhonetics(word) {
     try {
+      // 如果是词组(包含空格)，跳过音标获取
+      if (word.includes(' ')) {
+        return {
+          phoneticText: '',
+          audioUrl: ''
+        };
+      }
+      
       const response = await fetch(`https://api.dictionaryapi.dev/api/v2/entries/en/${word}`);
       const data = await response.json();
       
-      // 获取音标 - 优先取phonetic字段，其次取phonetics[0].text
+      // 获取音标和音频URL
       let phoneticText = '';
       let phoneticAudio = '';
       
       const entry = Array.isArray(data) ? data[0] : null;
       if (entry) {
+        // 优先从phonetic字段获取，其次从phonetics数组中所有text合并去重
+        const allTexts = entry.phonetics?.map(p => p.text).filter(Boolean) || [];
         phoneticText = entry.phonetic ||
-                      entry.phonetics?.[0]?.text ||
-                      '';
+                     [...new Set(allTexts)].join(', ') ||
+                     '';
         
-        // 获取第一个有效的音频URL
-        const audioObj = entry.phonetics?.find(p => p.audio && p.audio.startsWith('http')) || {};
-        phoneticAudio = audioObj.audio || '';
+        // 优先选择美式(us)或英式(au)发音
+        const preferredAudios = entry.phonetics?.filter(p =>
+          p.audio && /(us|au)\.mp3$/i.test(p.audio)
+        ) || [];
+        
+        // 如果没有优选发音，则取第一个有效音频
+        phoneticAudio = preferredAudios[0]?.audio ||
+                      entry.phonetics?.find(p => p.audio)?.audio || '';
         
         if (phoneticAudio) {
           await chrome.storage.local.set({
@@ -179,11 +195,17 @@ class ExtensionBackground {
         }
       }
       
-      return phoneticText;
-      
+      return {
+        phoneticText,
+        audioUrl: phoneticAudio
+      };
+
     } catch (error) {
       console.error('获取音标失败:', error);
-      return '';
+      return {
+        phoneticText: '',
+        audioUrl: ''
+      };
     }
   }
 
