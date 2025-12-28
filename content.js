@@ -10,6 +10,11 @@ class WordMarker {
     this.initPageMarks(); // 新增初始化调用
   }
 
+  // 新增方法：检测URL
+  isUrl(text) {
+    return /(?:https?:\/\/|www\.|^[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3})[\w\-\.\/?=&#%+]+/i.test(text);
+  }
+
   init() {
     // 检查是否已标记，防止重复
     const markCheck = (text) => !this.isAlreadyMarked(text);
@@ -32,6 +37,11 @@ class WordMarker {
         // 如果选区包含整个body/document或是过大范围
         if (container === document.body || container === document.documentElement ||
             range.toString().length > 10000) {
+          return;
+        }
+        
+        // 新增：检查是否是URL
+        if (this.isUrl(text)) {
           return;
         }
 
