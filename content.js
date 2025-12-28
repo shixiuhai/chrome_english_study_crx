@@ -121,10 +121,26 @@ class WordMarker {
   }
 
   async removeMark(markId) {
+    const markData = this.markedWords.get(markId);
+    if (!markData) return;
+
+    // 先删除单词本中的单词
+    await new Promise(resolve => {
+      chrome.runtime.sendMessage({
+        type: 'delete_word',
+        word: markData.text
+      }, () => {
+        if (chrome.runtime.lastError) {
+          console.error('删除单词失败:', chrome.runtime.lastError);
+        }
+        resolve();
+      });
+    });
+    
     // 从Map中删除
     this.markedWords.delete(markId);
     
-    // 发送消息更新存储
+    // 发送消息更新标记存储
     chrome.runtime.sendMessage({
       type: 'remove_mark',
       markId
@@ -133,24 +149,33 @@ class WordMarker {
     // 找到并移除DOM元素
     const markElement = document.querySelector(`[data-mark-id="${markId}"]`);
     if (markElement) {
-      // 恢复原始文本
-      const text = markElement.textContent.replace(this.markedWords.get(markId)?.translation || '', '');
-      markElement.replaceWith(text);
+      // 创建新的文本节点恢复原始内容
+      const newTextNode = document.createTextNode(markData.text);
+      markElement.replaceWith(newTextNode);
+      
+      // 添加轻微动画效果
+      newTextNode.style.opacity = '0';
+      newTextNode.style.transition = 'opacity 0.3s';
+      setTimeout(() => {
+        newTextNode.style.opacity = '1';
+      }, 10);
     }
   }
 
   async markWord(selection, text) {
     const range = selection.getRangeAt(0);
     const markId = `mark_${Date.now()}`;
+    // 克隆原始内容节点
+    const originalContent = range.cloneContents();
     
     const translation = await this.getTranslation(text);
-    this.createMarkElement(range, text, translation, markId);
+    this.createMarkElement(range, text, translation, markId, originalContent);
     
-    this.markedWords.set(markId, {text, translation});
+    this.markedWords.set(markId, {text, translation, originalContent});
     this.saveMark({id: markId, text, translation});
   }
 
-  createMarkElement(range, text, translation, id) {
+  createMarkElement(range, text, translation, id, originalContent) {
     const mark = document.createElement('span');
     mark.className = 'word-mark';
     mark.dataset.markId = id;
