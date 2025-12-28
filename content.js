@@ -14,12 +14,39 @@ class WordMarker {
     // 检查是否已标记，防止重复
     const markCheck = (text) => !this.isAlreadyMarked(text);
     
-    document.addEventListener('mouseup', () => {
+    // 单词计数器
+    function countWords(text) {
+      return text.split(/\s+/).filter(word => word.length > 0).length;
+    }
+
+    document.addEventListener('mouseup', (event) => {
       const selection = window.getSelection();
       const text = selection.toString().trim();
       
-      if (text && markCheck(text)) {
-        this.markWord(selection, text);
+      // 跳过Ctrl键的选中（包括Ctrl+A）
+      if (text && !event.ctrlKey) {
+        // 检查是否是全选(Ctrl+A)的情况
+        const range = selection.getRangeAt(0);
+        const container = range.commonAncestorContainer;
+        
+        // 如果选区包含整个body/document或是过大范围
+        if (container === document.body || container === document.documentElement ||
+            range.toString().length > 10000) {
+          return;
+        }
+
+        const wordCount = countWords(text);
+        if (wordCount > 500) {
+          chrome.runtime.sendMessage({
+            type: 'show_notification',
+            title: '单词数量限制',
+            message: '一次最多只能选中500个单词'
+          });
+          return;
+        }
+        if (markCheck(text)) {
+          this.markWord(selection, text);
+        }
       }
     });
   }

@@ -42,9 +42,19 @@ class ExtensionBackground {
             .then(() => sendResponse({success: true}));
           return true;
             
-        case 'get_marks': 
+        case 'get_marks':
           this.getMarks()
             .then(marks => sendResponse({marks}));
+          return true;
+          
+        case 'show_notification':
+          chrome.notifications.create({
+            type: 'basic',
+            iconUrl: './icons/icon48.png',
+            title: request.title,
+            message: request.message
+          });
+          sendResponse({success: true});
           return true;
       }
     });
