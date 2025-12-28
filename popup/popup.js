@@ -8,33 +8,61 @@ class WordBook {
   }
 
   async init() {
-    await this.loadWords();
-    this.renderWordList();
-    this.setupEventListeners();
+    this.setupLoadingUI();
+    try {
+      await this.loadWords();
+      this.renderWordList();
+      this.setupEventListeners();
+    } catch (error) {
+      this.showError('加载单词本失败，请重试');
+    }
+  }
+
+  setupLoadingUI() {
+    this.wordListElement.innerHTML = '<div class="loading">加载单词本中...</div>';
+  }
+
+  showError(message) {
+    this.wordListElement.innerHTML = `<div class="error">${message}</div>`;
   }
 
   async loadWords() {
-    try {
-      const response = await chrome.runtime.sendMessage({type: 'get_dictionary'});
-      this.words = Object.entries(response.dictionary || {}).map(([word, data]) => ({
-        word,
-        translation: data.translation || `${word}的翻译`,
-        added: data.added || Date.now(),
-        reviewed: data.reviewed || 0
-      }));
-      this.words.sort((a, b) => b.added - a.added);
-    } catch (error) {
-      console.error('加载单词失败:', error);
-    }
+    return new Promise((resolve) => {
+      chrome.runtime.sendMessage(
+        {type: 'get_dictionary'}, 
+        (response) => {
+          if (chrome.runtime.lastError) {
+            console.error('获取单词本失败:', chrome.runtime.lastError);
+            this.showError('连接插件失败');
+            resolve([]);
+            return;
+          }
+          
+          this.words = Object.entries(response?.dictionary || {}).map(([word, data]) => ({
+            word,
+            translation: data?.translation || '',
+            added: data?.added || Date.now(),
+            reviewed: data?.reviewed || 0
+          })).sort((a, b) => b.added - a.added);
+          
+          resolve();
+        }
+      );
+    });
   }
 
   renderWordList() {
     this.wordListElement.innerHTML = '';
     
+    if (this.words.length === 0) {
+      this.wordListElement.innerHTML = '<div class="empty">单词本为空</div>';
+      return;
+    }
+    
     this.words.forEach((wordData, index) => {
       const wordCard = document.createElement('div');
       wordCard.className = 'word-card';
-      wordCard.dataset.index = index;
+      wordCard.dataset.word = wordData.word;
       
       wordCard.innerHTML = `
         <div class="word-header">
@@ -44,10 +72,12 @@ class WordBook {
             <button class="delete-btn" title="删除">🗑️</button>
           </div>
         </div>
-        <div class="word-translation">${wordData.translation}</div>
-        <div class="word-meta">
-          <span>添加于 ${new Date(wordData.added).toLocaleDateString()}</span>
-          <span>复习 ${wordData.reviewed} 次</span>
+        <div class="word-body">
+          <div class="word-translation">${wordData.translation || '暂无翻译'}</div>
+          <div class="word-meta">
+            <span>添加于 ${new Date(wordData.added).toLocaleDateString()}</span>
+            <span>复习次数: ${wordData.reviewed}</span>
+          </div>
         </div>
       `;
       
@@ -57,83 +87,119 @@ class WordBook {
 
   setupEventListeners() {
     // 搜索功能
-    this.searchInput.addEventListener('input', () => {
-      const searchTerm = this.searchInput.value.toLowerCase();
-      const cards = this.wordListElement.querySelectorAll('.word-card');
-      
-      cards.forEach(card => {
-        const word = card.querySelector('.word-text').textContent.toLowerCase();
-        card.style.display = word.includes(searchTerm) ? '' : 'none';
-      });
-    });
-
+    this.searchInput.addEventListener('input', this.handleSearch.bind(this));
+    
     // 删除单词
-    this.wordListElement.addEventListener('click', async (e) => {
-      if (e.target.classList.contains('delete-btn')) {
-        const card = e.target.closest('.word-card');
-        const index = card.dataset.index;
-        const word = this.words[index].word;
-        
-        if (confirm(`确定要删除单词 "${word}" 吗?`)) {
-          await chrome.runtime.sendMessage({
-            type: 'delete_word',
-            word: word
-          });
-          await this.loadWords();
-          this.renderWordList();
-        }
-      }
-      
-      // 编辑单词
-      if (e.target.classList.contains('edit-btn')) {
-        const card = e.target.closest('.word-card');
-        const index = card.dataset.index;
-        this.editWord(index, card);
-      }
+    this.wordListElement.addEventListener('click', this.handleWordActions.bind(this));
+  }
+
+  handleSearch() {
+    const term = this.searchInput.value.toLowerCase().trim();
+    this.wordListElement.querySelectorAll('.word-card').forEach(card => {
+      const word = card.dataset.word.toLowerCase();
+      card.style.display = word.includes(term) ? '' : 'none';
     });
   }
 
-  async editWord(index, card) {
-    const wordData = this.words[index];
-    const translationElement = card.querySelector('.word-translation');
+  handleWordActions(e) {
+    if (e.target.classList.contains('delete-btn')) {
+      this.handleDeleteWord(e);
+    } 
+    else if (e.target.classList.contains('edit-btn')) {
+      this.handleEditWord(e);
+    }
+  }
+
+  async handleDeleteWord(e) {
+    const card = e.target.closest('.word-card');
+    const word = card.dataset.word;
     
-    const originalTranslation = translationElement.textContent;
-    translationElement.innerHTML = `
-      <input type="text" value="${originalTranslation}" class="edit-translation">
-      <button class="save-btn">保存</button>
-      <button class="cancel-btn">取消</button>
+    if (!confirm(`确定要删除单词 "${word}" 吗？`)) return;
+    
+    try {
+      await new Promise((resolve) => {
+        chrome.runtime.sendMessage(
+          {type: 'delete_word', word},
+          () => {
+            if (chrome.runtime.lastError) {
+              console.error('删除单词失败:', chrome.runtime.lastError);
+              this.showError('删除单词失败');
+              return;
+            }
+            resolve();
+          }
+        );
+      });
+      
+      await this.loadWords();
+      this.renderWordList();
+    } catch (error) {
+      console.error('删除出错:', error);
+      this.showError('删除单词时出错');
+    }
+  }
+
+  handleEditWord(e) {
+    const card = e.target.closest('.word-card');
+    const word = card.dataset.word;
+    const translationDiv = card.querySelector('.word-translation');
+    
+    const originalText = translationDiv.textContent;
+    translationDiv.innerHTML = `
+      <textarea class="edit-area">${originalText}</textarea>
+      <div class="edit-actions">
+        <button class="save-edit-btn">保存</button>
+        <button class="cancel-edit-btn">取消</button>
+      </div>
     `;
     
-    const saveBtn = translationElement.querySelector('.save-btn');
-    const cancelBtn = translationElement.querySelector('.cancel-btn');
-    const input = translationElement.querySelector('.edit-translation');
+    const textarea = translationDiv.querySelector('.edit-area');
+    textarea.focus();
     
-    input.focus();
-    
-    saveBtn.addEventListener('click', async () => {
-      const newTranslation = input.value.trim();
-      if (newTranslation && newTranslation !== originalTranslation) {
-        await chrome.runtime.sendMessage({
-          type: 'update_translation',
-          word: wordData.word,
-          translation: newTranslation
-        });
-        await this.loadWords();
-        this.renderWordList();
-      }
+    translationDiv.querySelector('.save-edit-btn').addEventListener('click', () => {
+      this.saveWordEdit(word, textarea.value.trim(), card);
     });
     
-    cancelBtn.addEventListener('click', () => {
-      translationElement.textContent = originalTranslation;
+    translationDiv.querySelector('.cancel-edit-btn').addEventListener('click', () => {
+      translationDiv.textContent = originalText;
     });
+  }
+
+  async saveWordEdit(word, newTranslation, card) {
+    if (!newTranslation) {
+      alert('翻译内容不能为空');
+      return;
+    }
     
-    input.addEventListener('keypress', (e) => {
-      if (e.key === 'Enter') {
-        saveBtn.click();
-      }
-    });
+    try {
+      await new Promise((resolve) => {
+        chrome.runtime.sendMessage(
+          {
+            type: 'update_translation',
+            word,
+            translation: newTranslation
+          },
+          () => {
+            if (chrome.runtime.lastError) {
+              console.error('更新翻译失败:', chrome.runtime.lastError);
+              this.showError('保存翻译失败');
+              return;
+            }
+            resolve();
+          }
+        );
+      });
+      
+      await this.loadWords();
+      this.renderWordList();
+    } catch (error) {
+      console.error('保存翻译出错:', error);
+      this.showError('保存翻译时出错');
+    }
   }
 }
 
 // 初始化单词本
-new WordBook();
+document.addEventListener('DOMContentLoaded', () => {
+  new WordBook();
+});
