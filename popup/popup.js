@@ -13,6 +13,7 @@ class WordBook {
       // 词组直接使用TTS
       if (word.includes(' ')) {
         this.fallbackTTS(word);
+        await this.incrementReviewCount(word);
         return;
       }
 
@@ -24,6 +25,7 @@ class WordBook {
           audio.preload = 'auto';
           audio.onerror = () => this.fallbackTTS(word);
           await audio.play();
+          await this.incrementReviewCount(word);
           return;
         } catch (e) {
           console.error('API音频播放失败:', e);
@@ -32,9 +34,21 @@ class WordBook {
       
       // 回退到TTS
       this.fallbackTTS(word);
+      await this.incrementReviewCount(word);
     } catch (error) {
       console.error('播放发音失败:', error);
       this.fallbackTTS(word);
+    }
+  }
+  
+  async incrementReviewCount(word) {
+    try {
+      await chrome.runtime.sendMessage({
+        type: 'update_review_count',
+        word
+      });
+    } catch (error) {
+      console.error('更新复习次数失败:', error);
     }
   }
   

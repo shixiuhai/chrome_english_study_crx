@@ -37,6 +37,11 @@ class ExtensionBackground {
             .then(() => sendResponse({success: true}));
           return true;
             
+        case 'update_review_count':
+          this.updateReviewCount(request.word)
+            .then(() => sendResponse({success: true}));
+          return true;
+            
         case 'save_mark':
           this.saveMark(request.markData)
             .then(() => sendResponse({success: true}));
@@ -152,6 +157,15 @@ class ExtensionBackground {
       dict[word].translation = newTranslation;
       await chrome.storage.local.set({[this.storageKeys.words]: dict});
     }
+  }
+
+  async updateReviewCount(word) {
+    const dict = await this.getDictionary();
+    if (dict[word]) {
+      dict[word].reviewed = (dict[word].reviewed || 0) + 1;
+      await chrome.storage.local.set({[this.storageKeys.words]: dict});
+    }
+    return dict[word]?.reviewed || 0;
   }
 
   async getPhonetics(word) {
