@@ -77,7 +77,7 @@ class ExtensionBackground {
     };
 
     try {
-      const response = await fetch(`http://192.168.6.248:8089/wx/chrome/crx/translate?word=${encodeURIComponent(word)}`, requestOptions);
+      const response = await fetch(`http://chrome.yizhiweb.top:8080/wx/chrome/crx/translate?word=${encodeURIComponent(word)}`, requestOptions);
       if (!response.ok) {
         throw new Error(`翻译API请求失败: ${response.status}`);
       }
@@ -178,7 +178,7 @@ class ExtensionBackground {
         };
       }
       
-      const response = await fetch(`http://192.168.6.248:8089/wx/chrome/crx/phonetics?word=${encodeURIComponent(word)}`);
+      const response = await fetch(`http://chrome.yizhiweb.top:8080/wx/chrome/crx/phonetics?word=${encodeURIComponent(word)}`);
       const data = await response.json();
       
       return {
