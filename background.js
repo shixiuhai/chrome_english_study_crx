@@ -77,12 +77,12 @@ class ExtensionBackground {
     };
 
     try {
-      const response = await fetch(`https://60s.viki.moe/v2/fanyi?text=${encodeURIComponent(word)}&from=en&to=zh-CHS`, requestOptions);
+      const response = await fetch(`http://192.168.6.248:8089/wx/chrome/crx/translate?word=${encodeURIComponent(word)}`, requestOptions);
       if (!response.ok) {
         throw new Error(`翻译API请求失败: ${response.status}`);
       }
       const result = await response.json();
-      const translation = result?.data?.target?.text || `${word}的翻译`;
+      const translation = result?.text || `${word}的翻译`;
       
       // 保存到字典并获取音标
       await this.saveWord(word, translation);
@@ -178,40 +178,12 @@ class ExtensionBackground {
         };
       }
       
-      const response = await fetch(`https://api.dictionaryapi.dev/api/v2/entries/en/${word}`);
+      const response = await fetch(`http://192.168.6.248:8089/wx/chrome/crx/phonetics?word=${encodeURIComponent(word)}`);
       const data = await response.json();
       
-      // 获取音标和音频URL
-      let phoneticText = '';
-      let phoneticAudio = '';
-      
-      const entry = Array.isArray(data) ? data[0] : null;
-      if (entry) {
-        // 优先从phonetic字段获取，其次从phonetics数组中所有text合并去重
-        const allTexts = entry.phonetics?.map(p => p.text).filter(Boolean) || [];
-        phoneticText = entry.phonetic ||
-                     [...new Set(allTexts)].join(', ') ||
-                     '';
-        
-        // 优先选择美式(us)或英式(au)发音
-        const preferredAudios = entry.phonetics?.filter(p =>
-          p.audio && /(us|au)\.mp3$/i.test(p.audio)
-        ) || [];
-        
-        // 如果没有优选发音，则取第一个有效音频
-        phoneticAudio = preferredAudios[0]?.audio ||
-                      entry.phonetics?.find(p => p.audio)?.audio || '';
-        
-        if (phoneticAudio) {
-          await chrome.storage.local.set({
-            [`audio_${word}`]: phoneticAudio
-          });
-        }
-      }
-      
       return {
-        phoneticText,
-        audioUrl: phoneticAudio
+        phoneticText: data?.phoneticText || '',
+        audioUrl: data?.audioUrl || ''
       };
 
     } catch (error) {
