@@ -154,14 +154,17 @@ class WordMarker {
       markElement.replaceWith(newTextNode);
       
       // 添加轻微动画效果
-      if (newTextNode) {
+      if (newTextNode && newTextNode.style) {
         newTextNode.style.opacity = '0';
         newTextNode.style.transition = 'opacity 0.3s';
-        setTimeout(() => {
-          if (newTextNode) {
+        const animate = () => {
+          if (newTextNode && newTextNode.style) {
             newTextNode.style.opacity = '1';
           }
-        }, 10);
+        };
+        requestAnimationFrame(() => {
+          requestAnimationFrame(animate);
+        });
       }
     }
   }
