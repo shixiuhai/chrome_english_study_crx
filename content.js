@@ -154,11 +154,15 @@ class WordMarker {
       markElement.replaceWith(newTextNode);
       
       // 添加轻微动画效果
-      newTextNode.style.opacity = '0';
-      newTextNode.style.transition = 'opacity 0.3s';
-      setTimeout(() => {
-        newTextNode.style.opacity = '1';
-      }, 10);
+      if (newTextNode) {
+        newTextNode.style.opacity = '0';
+        newTextNode.style.transition = 'opacity 0.3s';
+        setTimeout(() => {
+          if (newTextNode) {
+            newTextNode.style.opacity = '1';
+          }
+        }, 10);
+      }
     }
   }
 
