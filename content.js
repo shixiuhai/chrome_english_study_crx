@@ -151,6 +151,10 @@ class WordMarker {
     if (markElement) {
       // 创建新的文本节点恢复原始内容
       const newTextNode = document.createTextNode(markData.text);
+      // 保存前后空格
+      const prevSpace = markElement.previousSibling?.nodeType === Node.TEXT_NODE ? markElement.previousSibling : null;
+      const nextSpace = markElement.nextSibling?.nodeType === Node.TEXT_NODE ? markElement.nextSibling : null;
+      
       markElement.replaceWith(newTextNode);
       
       // 添加轻微动画效果
@@ -165,6 +169,14 @@ class WordMarker {
         requestAnimationFrame(() => {
           requestAnimationFrame(animate);
         });
+      }
+
+      // 恢复前后空格
+      if (prevSpace && !prevSpace.textContent.trim()) {
+        newTextNode.before(prevSpace);
+      }
+      if (nextSpace && !nextSpace.textContent.trim()) {
+        newTextNode.after(nextSpace);
       }
     }
   }
