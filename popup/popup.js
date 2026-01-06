@@ -75,22 +75,6 @@ class WordBook {
 
   async loadWordsWithPhonetics() {
     await this.loadWords();
-    
-    // 为没有音标的单词获取音标
-    for (const wordData of this.words) {
-      if (!wordData.phonetics) {
-        wordData.phonetics = await this.getPhonetics(wordData.word);
-        
-        // 更新存储
-        await new Promise(resolve => {
-          chrome.runtime.sendMessage({
-            type: 'update_phonetics',
-            word: wordData.word,
-            phonetics: wordData.phonetics
-          }, resolve);
-        });
-      }
-    }
   }
 
   async getPhonetics(word) {
@@ -139,18 +123,15 @@ class WordBook {
           
           try {
             const entries = Object.entries(response?.dictionary || {});
-            const wordPromises = entries.map(async ([word, data]) => {
-              const phonetics = data?.phonetics || await this.getPhonetics(word);
+            this.words = entries.map(([word, data]) => {
               return {
                 word,
                 translation: data?.translation || '',
-                phonetics,
+                phonetics: data?.phonetics || '',
                 added: data?.added || Date.now(),
                 reviewed: data?.reviewed || 0
               };
             });
-            
-            this.words = await Promise.all(wordPromises);
             this.words.sort((a, b) => b.added - a.added);
             resolve();
           } catch (error) {
@@ -316,6 +297,15 @@ class WordBook {
 // 初始化单词本
 document.addEventListener('DOMContentLoaded', () => {
   const wordBook = new WordBook();
+  
+  // 监听存储变化，实时更新单词本
+  chrome.storage.onChanged.addListener((changes, namespace) => {
+    if (namespace === 'local' && changes.word_dictionary) {
+      wordBook.loadWords().then(() => {
+        wordBook.renderWordList();
+      });
+    }
+  });
   
   // 添加全局朗读点击处理
   document.addEventListener('click', (e) => {

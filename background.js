@@ -1,10 +1,18 @@
 // Chrome插件后台脚本 - 单词学习助手
 
+// 导入配置
+const CONFIG = window.CONFIG || {
+  STORAGE_KEYS: {
+    DICTIONARY: 'word_dictionary',
+    MARKS: 'word_marks'
+  }
+};
+
 class ExtensionBackground {
   constructor() {
     this.storageKeys = {
-      words: 'word_dictionary',
-      marks: 'word_marks'
+      words: CONFIG.STORAGE_KEYS.DICTIONARY,
+      marks: CONFIG.STORAGE_KEYS.MARKS
     };
     
     this.initMessageHandlers();
@@ -52,6 +60,11 @@ class ExtensionBackground {
             .then(marks => sendResponse({marks}));
           return true;
           
+        case 'remove_mark':
+          this.removeMark(request.markId)
+            .then(() => sendResponse({success: true}));
+          return true;
+          
         case 'get_phonetics':
           this.getPhonetics(request.word)
             .then(phonetics => sendResponse({phonetics}));
@@ -77,7 +90,8 @@ class ExtensionBackground {
     };
 
     try {
-      const response = await fetch(`http://chrome.yizhiweb.top:8080/wx/chrome/crx/translate?word=${encodeURIComponent(word)}`, requestOptions);
+      const apiUrl = `${CONFIG.API_BASE_URL || 'http://chrome.yizhiweb.top:8080'}${CONFIG.ENDPOINTS.TRANSLATE || '/wx/chrome/crx/translate'}`;
+      const response = await fetch(`${apiUrl}?word=${encodeURIComponent(word)}`, requestOptions);
       if (!response.ok) {
         throw new Error(`翻译API请求失败: ${response.status}`);
       }
@@ -114,6 +128,12 @@ class ExtensionBackground {
       };
       await chrome.storage.local.set({[this.storageKeys.words]: dict});
     }
+  }
+
+  async removeMark(markId) {
+    const marks = await this.getMarks();
+    delete marks[markId];
+    await chrome.storage.local.set({[this.storageKeys.marks]: marks});
   }
 
   async saveMark(markData) {
@@ -178,7 +198,8 @@ class ExtensionBackground {
         };
       }
       
-      const response = await fetch(`http://chrome.yizhiweb.top:8080/wx/chrome/crx/phonetics?word=${encodeURIComponent(word)}`);
+      const apiUrl = `${CONFIG.API_BASE_URL || 'http://chrome.yizhiweb.top:8080'}${CONFIG.ENDPOINTS.PHONETICS || '/wx/chrome/crx/phonetics'}`;
+      const response = await fetch(`${apiUrl}?word=${encodeURIComponent(word)}`);
       const data = await response.json();
       
       return {
