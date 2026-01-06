@@ -90,6 +90,44 @@ graph TD
 - `STYLES.MARK_COLOR`：标记下划线颜色
 - `STYLES.TOOLTIP_DELAY`：提示框延迟时间
 
+## API 接口说明
+
+### 后端 API 控制器
+插件使用两个主要API接口，由Java Spring Boot后端提供：
+
+#### 1. 翻译 API
+- **URL**：`/chrome/crx/translate`
+- **方法**：GET
+- **参数**：
+  - `word`：要翻译的英文单词或词组
+- **请求示例**：
+  ```
+  GET /chrome/crx/translate?word=example
+  ```
+- **返回格式**：
+  ```json
+  {
+    "text": "例子"
+  }
+  ```
+
+#### 2. 音标 API
+- **URL**：`/chrome/crx/phonetics`
+- **方法**：GET
+- **参数**：
+  - `word`：要获取音标的英文单词
+- **请求示例**：
+  ```
+  GET /chrome/crx/phonetics?word=example
+  ```
+- **返回格式**：
+  ```json
+  {
+    "phoneticText": "/ɪɡˈzɑːmpl/",
+    "audioUrl": "https://example.com/audio.mp3"
+  }
+  ```
+
 ## 开发者说明
 
 ### 测试数据
