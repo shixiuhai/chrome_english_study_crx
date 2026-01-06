@@ -338,3 +338,92 @@ body {
 .word-list::-webkit-scrollbar-thumb:hover {
   background: rgba(255, 255, 255, 0.5);
 }
+
+/* 同步配置区域 */
+.sync-config {
+  display: flex;
+  gap: 8px;
+  margin: 10px 0;
+}
+
+#userIdInput {
+  flex: 1;
+  padding: 8px 12px;
+  border: 2px solid transparent;
+  border-radius: 20px;
+  outline: none;
+  font-size: 13px;
+  background: #f7fafc;
+  transition: all 0.3s ease;
+}
+
+#userIdInput:focus {
+  border-color: var(--primary-color);
+  background: var(--white);
+  box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
+}
+
+#saveUserIdBtn {
+  padding: 8px 16px;
+  border: none;
+  border-radius: 20px;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  background: var(--primary-color);
+  color: white;
+  transition: all 0.2s ease;
+}
+
+#saveUserIdBtn:hover {
+  background: var(--primary-dark);
+  transform: translateY(-1px);
+}
+
+/* 同步按钮区域 */
+.sync-buttons {
+  display: flex;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.sync-buttons button {
+  flex: 1;
+  padding: 8px 12px;
+  border: none;
+  border-radius: 20px;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+#downloadBtn {
+  background: var(--success-color);
+  color: white;
+}
+
+#downloadBtn:hover {
+  background: #38a169;
+  transform: translateY(-1px);
+}
+
+#uploadBtn {
+  background: var(--primary-color);
+  color: white;
+}
+
+#uploadBtn:hover {
+  background: var(--primary-dark);
+  transform: translateY(-1px);
+}
+
+#deleteBtn {
+  background: var(--danger-color);
+  color: white;
+}
+
+#deleteBtn:hover {
+  background: #f56565;
+  transform: translateY(-1px);
+}

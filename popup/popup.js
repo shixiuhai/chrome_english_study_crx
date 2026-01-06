@@ -3,6 +3,7 @@ class WordBook {
     this.wordListElement = document.getElementById('wordList');
     this.searchInput = document.querySelector('.search-box input');
     this.words = [];
+    this.userId = '';
     
     this.init();
   }
@@ -62,15 +63,234 @@ class WordBook {
       console.error('TTS失败:', e);
     }
   }
+  
   async init() {
     this.setupLoadingUI();
     try {
+      // 加载用户ID配置
+      await this.loadUserId();
+      // 设置同步事件监听
+      this.setupSyncEventListeners();
+      // 加载单词
       await this.loadWordsWithPhonetics();
       this.renderWordList();
       this.setupEventListeners();
     } catch (error) {
       this.showError('加载单词本失败，请重试');
     }
+  }
+
+  // 加载用户ID
+  async loadUserId() {
+    return new Promise((resolve) => {
+      chrome.storage.local.get(['userId'], (result) => {
+        this.userId = result.userId || '';
+        document.getElementById('userIdInput').value = this.userId;
+        resolve();
+      });
+    });
+  }
+
+  // 保存用户ID
+  async saveUserId() {
+    const userId = document.getElementById('userIdInput').value.trim();
+    if (!userId) {
+      alert('请输入有效的用户ID');
+      return;
+    }
+    
+    return new Promise((resolve) => {
+      chrome.storage.local.set({ userId }, () => {
+        this.userId = userId;
+        alert('用户ID保存成功');
+        resolve();
+      });
+    });
+  }
+
+  // 设置同步事件监听
+  setupSyncEventListeners() {
+    // 保存用户ID
+    document.getElementById('saveUserIdBtn').addEventListener('click', () => {
+      this.saveUserId();
+    });
+
+    // 拉取单词本
+    document.getElementById('downloadBtn').addEventListener('click', async () => {
+      await this.downloadWordbook();
+    });
+
+    // 同步单词本
+    document.getElementById('uploadBtn').addEventListener('click', async () => {
+      await this.uploadWordbook();
+    });
+
+    // 删除远程单词本
+    document.getElementById('deleteBtn').addEventListener('click', async () => {
+      await this.deleteRemoteWordbook();
+    });
+  }
+
+  // 上传单词本
+  async uploadWordbook() {
+    if (!this.userId) {
+      alert('请先设置用户ID');
+      return;
+    }
+
+    try {
+      // 获取当前单词本数据
+      const dictionary = await new Promise((resolve) => {
+        chrome.runtime.sendMessage(
+          {type: 'get_dictionary'},
+          (response) => {
+            resolve(response?.dictionary || {});
+          }
+        );
+      });
+
+      // 转换为API需要的格式
+      const wordbook = Object.entries(dictionary).map(([word, data]) => {
+        return {
+          word,
+          translation: data.translation,
+          phonetics: data.phonetics || '',
+          added: data.added,
+          reviewed: data.reviewed || 0
+        };
+      });
+
+      // 调用上传API
+      const response = await this.callSyncAPI('upload', {
+        userId: this.userId,
+        wordbook
+      });
+
+      if (response.success) {
+        alert(`单词本同步成功，共 ${wordbook.length} 个单词`);
+      } else {
+        alert('单词本同步失败: ' + response.message);
+      }
+    } catch (error) {
+      console.error('上传单词本失败:', error);
+      alert('上传单词本失败，请检查网络连接');
+    }
+  }
+
+  // 拉取单词本
+  async downloadWordbook() {
+    if (!this.userId) {
+      alert('请先设置用户ID');
+      return;
+    }
+
+    try {
+      // 调用下载API
+      const response = await this.callSyncAPI('download', { userId: this.userId });
+
+      if (response.success) {
+        const wordbook = response.wordbook || [];
+        if (wordbook.length === 0) {
+          alert('远程单词本为空');
+          return;
+        }
+
+        // 转换为本地存储格式
+        const dictionary = {};
+        wordbook.forEach(wordData => {
+          dictionary[wordData.word] = {
+            translation: wordData.translation,
+            phonetics: wordData.phonetics,
+            added: wordData.added,
+            reviewed: wordData.reviewed || 0
+          };
+        });
+
+        // 保存到本地
+        await new Promise((resolve) => {
+          chrome.runtime.sendMessage(
+            {type: 'save_dictionary', dictionary},
+            () => {
+              resolve();
+            }
+          );
+        });
+
+        // 重新加载单词本
+        await this.loadWordsWithPhonetics();
+        this.renderWordList();
+        
+        alert(`单词本拉取成功，共 ${wordbook.length} 个单词`);
+      } else {
+        alert('单词本拉取失败: ' + response.message);
+      }
+    } catch (error) {
+      console.error('拉取单词本失败:', error);
+      alert('拉取单词本失败，请检查网络连接');
+    }
+  }
+
+  // 删除远程单词本
+  async deleteRemoteWordbook() {
+    if (!this.userId) {
+      alert('请先设置用户ID');
+      return;
+    }
+
+    if (!confirm('确定要删除远程单词本吗？此操作不可恢复！')) {
+      return;
+    }
+
+    try {
+      // 调用删除API
+      const response = await this.callSyncAPI('delete', { userId: this.userId });
+
+      if (response.success) {
+        alert('远程单词本删除成功');
+      } else {
+        alert('远程单词本删除失败: ' + response.message);
+      }
+    } catch (error) {
+      console.error('删除远程单词本失败:', error);
+      alert('删除远程单词本失败，请检查网络连接');
+    }
+  }
+
+  // 调用同步API
+  async callSyncAPI(action, data) {
+    let url = '';
+    let method = '';
+    let params = null;
+
+    switch (action) {
+      case 'upload':
+        url = `${CONFIG.API_BASE_URL}${CONFIG.ENDPOINTS.SYNC_UPLOAD}`;
+        method = 'POST';
+        params = JSON.stringify(data);
+        break;
+      case 'download':
+        url = `${CONFIG.API_BASE_URL}${CONFIG.ENDPOINTS.SYNC_DOWNLOAD}?userId=${encodeURIComponent(data.userId)}`;
+        method = 'GET';
+        break;
+      case 'delete':
+        url = `${CONFIG.API_BASE_URL}${CONFIG.ENDPOINTS.SYNC_DELETE}?userId=${encodeURIComponent(data.userId)}`;
+        method = 'GET';
+        break;
+      default:
+        throw new Error('Unknown action: ' + action);
+    }
+
+    const headers = {
+      'Content-Type': 'application/json'
+    };
+
+    const response = await fetch(url, {
+      method,
+      headers,
+      body: params
+    });
+
+    return await response.json();
   }
 
   async loadWordsWithPhonetics() {

@@ -6,7 +6,10 @@ const CONFIG = {
   // API端点
   ENDPOINTS: {
     TRANSLATE: '/wx/chrome/crx/translate',
-    PHONETICS: '/wx/chrome/crx/phonetics'
+    PHONETICS: '/wx/chrome/crx/phonetics',
+    SYNC_UPLOAD: '/wx/chrome/crx/sync/upload',
+    SYNC_DOWNLOAD: '/wx/chrome/crx/sync/download',
+    SYNC_DELETE: '/wx/chrome/crx/sync/delete'
   },
   
   // 单词数量限制
