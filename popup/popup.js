@@ -83,7 +83,7 @@ class WordBook {
   // 加载用户ID
   async loadUserId() {
     return new Promise((resolve) => {
-      chrome.storage.local.get(['userId'], (result) => {
+      chrome.storage.local.get(['userId', 'lastSyncTimestamp'], (result) => {
         this.userId = result.userId || '';
         document.getElementById('userIdInput').value = this.userId;
         resolve();
@@ -167,6 +167,10 @@ class WordBook {
       });
 
       if (response.success) {
+        // 保存服务器返回的时间戳
+        await new Promise((resolve) => {
+          chrome.storage.local.set({ lastSyncTimestamp: response.timestamp }, resolve);
+        });
         alert(`单词本同步成功，共 ${wordbook.length} 个单词`);
       } else {
         alert('单词本同步失败: ' + response.message);
@@ -185,10 +189,23 @@ class WordBook {
     }
 
     try {
+      // 获取本地上次同步时间戳
+      const lastSyncTimestamp = await new Promise((resolve) => {
+        chrome.storage.local.get(['lastSyncTimestamp'], (result) => {
+          resolve(result.lastSyncTimestamp || 0);
+        });
+      });
+
       // 调用下载API
       const response = await this.callSyncAPI('download', { userId: this.userId });
 
       if (response.success) {
+        // 检查时间戳一致性
+        if (response.timestamp && response.timestamp <= lastSyncTimestamp) {
+          alert('当前单词本已是最新版本，无需更新');
+          return;
+        }
+
         const wordbook = response.wordbook || [];
         if (wordbook.length === 0) {
           alert('远程单词本为空');
@@ -214,6 +231,11 @@ class WordBook {
               resolve();
             }
           );
+        });
+
+        // 保存最新的同步时间戳
+        await new Promise((resolve) => {
+          chrome.storage.local.set({ lastSyncTimestamp: response.timestamp }, resolve);
         });
 
         // 重新加载单词本

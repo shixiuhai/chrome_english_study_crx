@@ -31,6 +31,13 @@
    - 所有数据本地存储
    - 统一配置管理（API路径等）
 
+6. **多端同步**
+   - 支持单词本上传到云端
+   - 支持从云端下载最新单词本
+   - 基于时间戳的版本控制
+   - 自动检查最新版本，避免重复更新
+   - 支持多设备数据同步一致性
+
 ## 使用说明
 
 ### 安装与加载
@@ -93,7 +100,7 @@ graph TD
 ## API 接口说明
 
 ### 后端 API 控制器
-插件使用两个主要API接口，由Java Spring Boot后端提供：
+插件使用多个API接口，由Java Spring Boot后端提供：
 
 #### 1. 翻译 API
 - **URL**：`/chrome/crx/translate`
@@ -125,6 +132,76 @@ graph TD
   {
     "phoneticText": "/ɪɡˈzɑːmpl/",
     "audioUrl": "https://example.com/audio.mp3"
+  }
+  ```
+
+#### 3. 单词本上传 API
+- **URL**：`/chrome/crx/sync/upload`
+- **方法**：POST
+- **请求体**：
+  ```json
+  {
+    "userId": "用户ID",
+    "wordbook": [{"word": "example", "translation": "例子", "phonetics": "/ɪɡˈzɑːmpl/", "added": 1672531200000, "reviewed": 0}]
+  }
+  ```
+- **返回格式**：
+  ```json
+  {
+    "success": true,
+    "message": "单词本上传成功",
+    "filePath": "/home/static/file/user123_wordbook.json",
+    "wordCount": 1,
+    "timestamp": 1767692400000
+  }
+  ```
+
+#### 4. 单词本下载 API
+- **URL**：`/chrome/crx/sync/download`
+- **方法**：GET
+- **参数**：
+  - `userId`：用户ID
+- **请求示例**：
+  ```
+  GET /chrome/crx/sync/download?userId=user123
+  ```
+- **返回格式**：
+  ```json
+  {
+    "success": true,
+    "message": "单词本获取成功",
+    "wordbook": [{"word": "example", "translation": "例子", "phonetics": "/ɪɡˈzɑːmpl/", "added": 1672531200000, "reviewed": 0}],
+    "wordCount": 1,
+    "timestamp": 1767692400000
+  }
+  ```
+
+#### 5. 单词本删除 API
+- **URL**：`/chrome/crx/sync/delete`
+- **方法**：GET
+- **参数**：
+  - `userId`：用户ID
+- **请求示例**：
+  ```
+  GET /chrome/crx/sync/delete?userId=user123
+  ```
+- **返回格式**：
+  ```json
+  {
+    "success": true,
+    "message": "单词本删除成功"
+  }
+  ```
+
+#### 6. 同步用户列表 API
+- **URL**：`/chrome/crx/sync/list`
+- **方法**：GET
+- **返回格式**：
+  ```json
+  {
+    "success": true,
+    "users": [{"userId": "user123", "fileName": "user123_wordbook.json", "fileSize": 200, "lastModified": 1767692400000}],
+    "total": 1
   }
   ```
 
