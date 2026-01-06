@@ -43,6 +43,9 @@ function findAllMatches(text, regex) {
 class WordMarker {
   constructor() {
     this.markedWords = new Map();
+    this.translationQueue = [];
+    this.currentTranslations = 0;
+    this.maxTranslations = 5; // 最大同时翻译数量
     this.init();
     this.initPageMarks(); // 新增初始化调用
   }
@@ -86,12 +89,11 @@ class WordMarker {
         if (!trimmedText) return;
 
         const wordCount = countWords(trimmedText);
-        const wordLimit = CONFIG.WORD_COUNT_LIMIT || 50;
-        if (wordCount > wordLimit) {
+        if (wordCount > 50) {
           chrome.runtime.sendMessage({
             type: 'show_notification',
             title: '单词数量限制',
-            message: `一次最多只能选中${wordLimit}个单词`
+            message: '一次最多只能选中50个单词'
           });
           return;
         }
@@ -214,7 +216,6 @@ class WordMarker {
     const markData = this.markedWords.get(markId);
     if (!markData) return;
 
-    // 从单词本中删除该单词
     await new Promise(resolve => {
       chrome.runtime.sendMessage({
         type: 'delete_word',
@@ -227,79 +228,132 @@ class WordMarker {
       });
     });
     
-    // 移除页面上所有相同的标记
-    this.removeAllOccurrences(markData.text);
-  }
-  
-  // 移除页面上所有相同的标记
-  removeAllOccurrences(text) {
-    // 获取所有相关的标记ID
-    const markIdsToRemove = [];
-    for (const [markId, markData] of this.markedWords) {
-      if (markData.text === text) {
-        markIdsToRemove.push(markId);
+    this.markedWords.delete(markId);
+    
+    chrome.runtime.sendMessage({
+      type: 'remove_mark',
+      markId
+    });
+    
+    const markElement = document.querySelector(`[data-mark-id="${markId}"]`);
+    if (markElement) {
+      // 直接恢复文本，不需要处理空格，因为我们在选区时已经排除了空格
+      const newTextNode = document.createTextNode(markData.text);
+      markElement.replaceWith(newTextNode);
+      
+      // 添加轻微动画效果
+      if (newTextNode && newTextNode.style) {
+        newTextNode.style.opacity = '0';
+        newTextNode.style.transition = 'opacity 0.3s';
+        const animate = () => {
+          if (newTextNode && newTextNode.style) {
+            newTextNode.style.opacity = '1';
+          }
+        };
+        requestAnimationFrame(() => {
+          requestAnimationFrame(animate);
+        });
       }
     }
-    
-    // 移除DOM元素和存储
-    markIdsToRemove.forEach(markId => {
-      // 从Map中删除
-      this.markedWords.delete(markId);
-      
-      // 发送消息更新标记存储
-      chrome.runtime.sendMessage({
-        type: 'remove_mark',
-        markId
-      });
-      
-      // 移除DOM元素
-      const markElement = document.querySelector(`[data-mark-id="${markId}"]`);
-      if (markElement) {
-        const markData = this.markedWords.get(markId) || { text };
-        const newTextNode = document.createTextNode(markData.text);
-        markElement.replaceWith(newTextNode);
-        
-        // 添加轻微动画效果
-        if (newTextNode && newTextNode.style) {
-          newTextNode.style.opacity = '0';
-          newTextNode.style.transition = 'opacity 0.3s';
-          const animate = () => {
-            if (newTextNode && newTextNode.style) {
-              newTextNode.style.opacity = '1';
-            }
-          };
-          requestAnimationFrame(() => {
-            requestAnimationFrame(animate);
-          });
-        }
-      }
-    });
   }
 
 
 
   async markWord(selection, text) {
-    // 先完成当前选区的标记
+    // 1. 先获取选区范围
     const range = selection.getRangeAt(0);
+    
+    // 2. 先生成唯一ID
     const markId = `mark_${Date.now()}`;
     const originalContent = range.cloneContents();
     
-    const translation = await this.getTranslation(text);
-    this.createMarkElement(range, text, translation, markId, originalContent);
+    // 3. 创建临时翻译，先划线
+    const tempTranslation = '正在翻译...';
     
+    // 4. 立即创建当前选区的标记，提升用户体验
+    this.createMarkElement(range, text, tempTranslation, markId, originalContent);
+    
+    // 5. 保存到Map
     this.markedWords.set(markId, {
       text,
-      translation,
+      translation: tempTranslation,
       originalContent
     });
-    this.saveMark({id: markId, text, translation});
     
-    // 然后标记页面上所有相同的单词/词组
-    this.markAllOccurrences(text, translation);
+    // 6. 将翻译请求添加到队列
+    const translationRequest = {
+      markId,
+      text
+    };
+    
+    // 检查当前翻译数量
+    if (this.currentTranslations >= this.maxTranslations) {
+      // 添加到队列
+      this.translationQueue.push(translationRequest);
+      // 更新标记显示
+      this.updateMarkTranslation(markId, '等待翻译中...');
+    } else {
+      // 立即处理
+      this.processTranslation(translationRequest);
+    }
   }
   
-  // 标记页面上所有相同的单词/词组
-  markAllOccurrences(text, translation) {
+  // 处理单个翻译请求
+  processTranslation(request) {
+    this.currentTranslations++;
+    
+    this.getTranslation(request.text).then(translation => {
+      // 更新当前标记的翻译
+      this.updateMarkTranslation(request.markId, translation);
+      
+      // 保存到存储
+      this.saveMark({id: request.markId, text: request.text, translation});
+      
+      // 标记页面上所有其他相同的单词/词组
+      this.markOtherOccurrences(request.text, translation);
+    }).finally(() => {
+      // 翻译完成，减少计数
+      this.currentTranslations--;
+      // 处理队列中的下一个请求
+      this.processTranslationQueue();
+    });
+  }
+  
+  // 处理翻译队列
+  processTranslationQueue() {
+    if (this.translationQueue.length > 0 && this.currentTranslations < this.maxTranslations) {
+      const nextRequest = this.translationQueue.shift();
+      // 更新标记显示
+      this.updateMarkTranslation(nextRequest.markId, '正在翻译...');
+      // 处理请求
+      this.processTranslation(nextRequest);
+    }
+  }
+  
+  // 更新单个标记的翻译
+  updateMarkTranslation(markId, translation) {
+    // 更新Map中的数据
+    const markData = this.markedWords.get(markId);
+    if (markData) {
+      markData.translation = translation;
+      this.markedWords.set(markId, markData);
+    }
+    
+    // 更新DOM显示
+    const markElement = document.querySelector(`[data-mark-id="${markId}"]`);
+    if (markElement) {
+      const tooltip = markElement.querySelector('.word-tooltip');
+      if (tooltip) {
+        const translationSpan = tooltip.querySelector('.translation-highlight');
+        if (translationSpan) {
+          translationSpan.textContent = translation;
+        }
+      }
+    }
+  }
+  
+  // 标记页面上其他相同的单词/词组
+  markOtherOccurrences(text, translation) {
     const walker = document.createTreeWalker(
       document.body,
       NodeFilter.SHOW_TEXT,
@@ -319,31 +373,60 @@ class WordMarker {
       }
       
       const nodeText = node.nodeValue;
+      const matches = [];
       const regex = new RegExp(escapeRegExp(text), 'gi');
       let match;
       
-      // 重置正则状态
+      // 1. 先收集所有匹配，不修改DOM
       regex.lastIndex = 0;
       while ((match = regex.exec(nodeText)) !== null) {
-        // 创建范围标记
-        const range = document.createRange();
-        range.setStart(node, match.index);
-        range.setEnd(node, match.index + text.length);
-        
-        const markId = `mark_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
-        const originalContent = range.cloneContents();
-        
-        this.createMarkElement(range, text, translation, markId, originalContent);
-        this.markedWords.set(markId, {
-          text,
-          translation,
-          originalContent
-        });
-        this.saveMark({id: markId, text, translation});
+        // 检查匹配是否有效
+        if (match.index + text.length <= nodeText.length) {
+          matches.push({...match});
+        }
         
         // 避免无限循环（零长度匹配）
         if (regex.lastIndex === match.index) {
           regex.lastIndex++;
+        }
+      }
+      
+      // 2. 按位置降序处理匹配（从后往前），避免DOM修改影响后续匹配
+      matches.sort((a, b) => b.index - a.index);
+      
+      // 3. 遍历处理所有匹配
+      for (const match of matches) {
+        try {
+          // 再次检查节点是否仍然有效
+          if (!node.parentNode || node.nodeValue !== nodeText) {
+            break;
+          }
+          
+          // 检查索引是否有效
+          if (match.index < 0 || match.index + text.length > node.nodeValue.length) {
+            continue;
+          }
+          
+          // 创建范围标记
+          const range = document.createRange();
+          range.setStart(node, match.index);
+          range.setEnd(node, match.index + text.length);
+          
+          const markId = `mark_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+          const originalContent = range.cloneContents();
+          
+          // 直接使用翻译结果创建标记
+          this.createMarkElement(range, text, translation, markId, originalContent);
+          this.markedWords.set(markId, {
+            text,
+            translation,
+            originalContent
+          });
+          this.saveMark({id: markId, text, translation});
+        } catch (error) {
+          console.warn('标记单词时出错:', error.message);
+          // 跳过错误，继续处理其他匹配
+          continue;
         }
       }
     }
@@ -353,9 +436,7 @@ class WordMarker {
     const mark = document.createElement('span');
     mark.className = 'word-mark';
     mark.dataset.markId = id;
-    const markColor = CONFIG.STYLES?.MARK_COLOR || '#1e90ff';
-    const underlineWidth = CONFIG.STYLES?.MARK_UNDERLINE_WIDTH || '2px';
-    mark.style.textDecoration = `underline ${markColor} ${underlineWidth}`;
+    mark.style.textDecoration = 'underline #1e90ff 2px';
     mark.style.position = 'relative';
     mark.style.cursor = 'pointer';
 
@@ -396,7 +477,9 @@ class WordMarker {
       tooltip.style.display = 'none';
     });
 
-    mark.appendChild(range.cloneContents());
+    // 使用纯文本节点，确保只显示核心文本
+    const textNode = document.createTextNode(text);
+    mark.appendChild(textNode);
     mark.appendChild(tooltip);
     range.deleteContents();
     range.insertNode(mark);

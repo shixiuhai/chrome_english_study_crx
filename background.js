@@ -1,7 +1,17 @@
 // Chrome插件后台脚本 - 单词学习助手
 
-// 导入配置
-const CONFIG = window.CONFIG || {
+// 配置对象（直接定义，因为service worker没有window对象）
+const CONFIG = {
+  // API基础URL
+  API_BASE_URL: 'http://chrome.yizhiweb.top:8080',
+  
+  // API端点
+  ENDPOINTS: {
+    TRANSLATE: '/wx/chrome/crx/translate',
+    PHONETICS: '/wx/chrome/crx/phonetics'
+  },
+  
+  // 存储键名
   STORAGE_KEYS: {
     DICTIONARY: 'word_dictionary',
     MARKS: 'word_marks'
