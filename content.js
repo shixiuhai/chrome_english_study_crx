@@ -59,10 +59,18 @@ class WordMarker {
     this.translationQueue = [];
     this.currentTranslations = 0;
     this.maxTranslations = 5; // 最大同时翻译数量
+    this.isContextValid = true; // 扩展上下文有效性标志
     this.init();
     this.checkDomain().then(isAllowed => {
-      if (isAllowed) {
+      if (this.isContextValid && isAllowed) {
         this.initPageMarks(); // 新增初始化调用
+      }
+    }).catch(error => {
+      if (error.message.includes('Extension context invalidated')) {
+        this.isContextValid = false;
+        console.log('扩展上下文已销毁，跳过初始化');
+      } else {
+        console.error('初始化出错:', error);
       }
     });
   }
@@ -202,57 +210,73 @@ class WordMarker {
 
   // 新增方法：初始化页面标记（优化版）
   async initPageMarks() {
-    const marks = await this.getMarks();
-    if (!marks || Object.keys(marks).length === 0) return;
-
-    // 获取所有标记值
-    const markValues = Object.values(marks);
-    
-    // 提取单词列表
-    const wordList = markValues.map(m => m.text).filter(text => text && text.trim());
-    if (wordList.length === 0) return;
-    
-    const regex = buildMultiPatternRegex(wordList);
-
-    const walker = document.createTreeWalker(
-      document.body,
-      NodeFilter.SHOW_TEXT,
-      null,
-      false
-    );
-
-    const textNodes = [];
-    let node;
-    let nodeCount = 0;
-    
-    while ((node = walker.nextNode()) && nodeCount < (window.CONFIG?.MAX_TEXT_NODES || 2000)) { // 使用配置文件中的最大文本节点数量
-      const parent = node.parentNode;
-      if (parent.nodeName === 'SCRIPT' || parent.nodeName === 'STYLE' || parent.nodeName === 'NOSCRIPT') {
-        continue;
-      }
-      // 跳过已处理的节点
-      if (parent.classList?.contains('word-mark')) continue;
-      
-      // 跳过空文本节点
-      if (!node.nodeValue || !node.nodeValue.trim()) continue;
-      
-      textNodes.push(node);
-      nodeCount++;
+    // 检查扩展上下文是否有效
+    if (!this.isContextValid) {
+      console.log('扩展上下文已销毁，跳过页面标记初始化');
+      return;
     }
+    
+    try {
+      const marks = await this.getMarks();
+      if (!marks || Object.keys(marks).length === 0) return;
 
-    // 创建标记映射，提高查找效率
-    const marksMap = {};
-    markValues.forEach(mark => {
-      marksMap[mark.text.toLowerCase()] = mark;
-    });
+      // 获取所有标记值
+      const markValues = Object.values(marks);
+      
+      // 提取单词列表
+      const wordList = markValues.map(m => m.text).filter(text => text && text.trim());
+      if (wordList.length === 0) return;
+      
+      const regex = buildMultiPatternRegex(wordList);
 
-    // 分批处理，每批处理 100 个节点
-    const BATCH_SIZE = 100;
-    for (let i = 0; i < textNodes.length; i += BATCH_SIZE) {
-      const batch = textNodes.slice(i, i + BATCH_SIZE);
-      this.processTextNodesBatch(batch, regex, marksMap);
-      // 让出主线程
-      await new Promise(resolve => setTimeout(resolve, 0));
+      const walker = document.createTreeWalker(
+        document.body,
+        NodeFilter.SHOW_TEXT,
+        null,
+        false
+      );
+
+      const textNodes = [];
+      let node;
+      let nodeCount = 0;
+      
+      while ((node = walker.nextNode()) && nodeCount < (window.CONFIG?.MAX_TEXT_NODES || 2000)) { // 使用配置文件中的最大文本节点数量
+        const parent = node.parentNode;
+        if (parent.nodeName === 'SCRIPT' || parent.nodeName === 'STYLE' || parent.nodeName === 'NOSCRIPT') {
+          continue;
+        }
+        // 跳过已处理的节点
+        if (parent.classList?.contains('word-mark')) continue;
+        
+        // 跳过空文本节点
+        if (!node.nodeValue || !node.nodeValue.trim()) continue;
+        
+        textNodes.push(node);
+        nodeCount++;
+      }
+
+      // 创建标记映射，提高查找效率
+      const marksMap = {};
+      markValues.forEach(mark => {
+        marksMap[mark.text.toLowerCase()] = mark;
+      });
+
+      // 分批处理，每批处理 100 个节点
+      const BATCH_SIZE = 100;
+      for (let i = 0; i < textNodes.length; i += BATCH_SIZE) {
+        const batch = textNodes.slice(i, i + BATCH_SIZE);
+        this.processTextNodesBatch(batch, regex, marksMap);
+        // 让出主线程
+        await new Promise(resolve => setTimeout(resolve, 0));
+      }
+    } catch (error) {
+      // 处理扩展上下文被销毁的错误
+      if (error.message.includes('Extension context invalidated')) {
+        this.isContextValid = false;
+        console.log('扩展上下文已销毁，跳过页面标记初始化');
+      } else {
+        console.error('初始化页面标记时出错:', error);
+      }
     }
   }
 
@@ -441,6 +465,12 @@ class WordMarker {
 
 
   async markWord(selection, text) {
+    // 检查扩展上下文是否有效
+    if (!this.isContextValid) {
+      console.log('扩展上下文已销毁，跳过标记单词');
+      return;
+    }
+    
     // 检查当前域名是否被排除
     const isAllowed = await this.checkDomain();
     if (!isAllowed) {
@@ -487,9 +517,23 @@ class WordMarker {
   
   // 处理单个翻译请求
   processTranslation(request) {
+    // 检查扩展上下文是否有效
+    if (!this.isContextValid) {
+      console.log('扩展上下文已销毁，跳过翻译请求');
+      this.currentTranslations--;
+      this.processTranslationQueue();
+      return;
+    }
+    
     this.currentTranslations++;
     
     this.getTranslation(request.text).then(translation => {
+      // 再次检查扩展上下文是否有效
+      if (!this.isContextValid) {
+        console.log('扩展上下文已销毁，跳过翻译结果处理');
+        return;
+      }
+      
       // 更新当前标记的翻译
       this.updateMarkTranslation(request.markId, translation);
       
