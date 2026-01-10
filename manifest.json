@@ -5,6 +5,9 @@
   "description": "点击网页英文单词进行翻译和记录",
   "permissions": ["storage", "activeTab", "notifications"],
   "host_permissions": ["https://60s.viki.moe/", "https://api.dictionaryapi.dev/"],
+  "content_security_policy": {
+    "extension_pages": "script-src 'self'; object-src 'self';"
+  },
   "background": {
     "service_worker": "background.js"
   },
