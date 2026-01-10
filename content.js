@@ -5,13 +5,25 @@ function escapeRegExp(string) {
 
 // 构建高效的多模式匹配正则（按长度降序排列，避免短单词优先匹配问题）
 function buildMultiPatternRegex(wordList) {
+  // 过滤掉无效单词，只保留非空且非纯空格的单词
+  const filteredWords = wordList.filter(word => {
+    return word && word.trim(); // 保留所有非空单词，包括长度为1的单词
+  });
+  
   // 按长度降序排序，确保长词优先匹配
-  const sortedWords = [...wordList].sort((a, b) => b.length - a.length);
-  // 转义并分组
-  const patterns = sortedWords.map(w => escapeRegExp(w));
-  // 构建正则，使用捕获组保持匹配顺序
+  const sortedWords = [...filteredWords].sort((a, b) => b.length - a.length);
+  
+  // 去重，避免重复匹配
+  const uniqueWords = [...new Set(sortedWords)];
+  
+  // 转义并使用捕获组，确保findAllMatches能正确获取匹配结果
+  const patterns = uniqueWords.map(w => escapeRegExp(w));
+  
+  // 构建正则，使用捕获组
   const combinedPattern = patterns.map(p => `(${p})`).join('|');
-  return new RegExp(combinedPattern, 'gi');
+  
+  // 只有当有有效模式时才创建正则，否则返回空正则
+  return combinedPattern ? new RegExp(combinedPattern, 'gi') : new RegExp('^$', 'gi');
 }
 
 // 查找所有匹配及其位置
@@ -43,6 +55,7 @@ function findAllMatches(text, regex) {
 class WordMarker {
   constructor() {
     this.markedWords = new Map();
+    this.maxMarkedWords = 1000; // 限制最大标记数量，避免内存泄漏
     this.translationQueue = [];
     this.currentTranslations = 0;
     this.maxTranslations = 5; // 最大同时翻译数量
@@ -151,7 +164,13 @@ class WordMarker {
     const marks = await this.getMarks();
     if (!marks || Object.keys(marks).length === 0) return;
 
-    const wordList = Object.values(marks).map(m => m.text);
+    // 获取所有标记值
+    const markValues = Object.values(marks);
+    
+    // 提取单词列表
+    const wordList = markValues.map(m => m.text).filter(text => text && text.trim());
+    if (wordList.length === 0) return;
+    
     const regex = buildMultiPatternRegex(wordList);
 
     const walker = document.createTreeWalker(
@@ -163,28 +182,41 @@ class WordMarker {
 
     const textNodes = [];
     let node;
-    while (node = walker.nextNode()) {
+    let nodeCount = 0;
+    
+    while ((node = walker.nextNode()) && nodeCount < 2000) { // 增加节点处理数量
       const parent = node.parentNode;
       if (parent.nodeName === 'SCRIPT' || parent.nodeName === 'STYLE' || parent.nodeName === 'NOSCRIPT') {
         continue;
       }
       // 跳过已处理的节点
       if (parent.classList?.contains('word-mark')) continue;
+      
+      // 跳过空文本节点
+      if (!node.nodeValue || !node.nodeValue.trim()) continue;
+      
       textNodes.push(node);
+      nodeCount++;
     }
 
-    // 分批处理，每批处理 100 个节点，避免阻塞
+    // 创建标记映射，提高查找效率
+    const marksMap = {};
+    markValues.forEach(mark => {
+      marksMap[mark.text.toLowerCase()] = mark;
+    });
+
+    // 分批处理，每批处理 100 个节点
     const BATCH_SIZE = 100;
     for (let i = 0; i < textNodes.length; i += BATCH_SIZE) {
       const batch = textNodes.slice(i, i + BATCH_SIZE);
-      this.processTextNodesBatch(batch, regex, marks);
+      this.processTextNodesBatch(batch, regex, marksMap);
       // 让出主线程
       await new Promise(resolve => setTimeout(resolve, 0));
     }
   }
 
   // 批量处理文本节点
-  processTextNodesBatch(textNodes, regex, marks) {
+  processTextNodesBatch(textNodes, regex, marksMap) {
     for (const textNode of textNodes) {
       const text = textNode.nodeValue;
       if (!text || !text.trim()) continue;
@@ -195,7 +227,8 @@ class WordMarker {
       // 按位置降序处理（从后往前替换，避免位置偏移）
       for (let i = matches.length - 1; i >= 0; i--) {
         const match = matches[i];
-        const mark = Object.values(marks).find(m => m.text.toLowerCase() === match.text.toLowerCase());
+        // 使用映射查找，提高性能
+        const mark = marksMap[match.text.toLowerCase()];
         if (mark) {
           this.markTextNode(textNode, match, mark);
         }

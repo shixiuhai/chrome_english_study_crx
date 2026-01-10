@@ -18,6 +18,46 @@ const CONFIG = {
   }
 };
 
+// 通用API请求函数，支持自动重试
+async function fetchWithRetry(url, options = {}, retryCount = 1) {
+  const defaultOptions = {
+    method: 'GET',
+    redirect: 'follow',
+    timeout: 5000, // 5秒超时
+    ...options
+  };
+
+  try {
+    const controller = new AbortController();
+    const id = setTimeout(() => controller.abort(), defaultOptions.timeout);
+    
+    const response = await fetch(url, {
+      ...defaultOptions,
+      signal: controller.signal
+    });
+    
+    clearTimeout(id);
+    
+    if (!response.ok) {
+      if (retryCount > 0 && response.status >= 500) {
+        // 服务器错误，重试1次
+        console.log(`API请求失败(${response.status})，重试中...`);
+        return fetchWithRetry(url, options, retryCount - 1);
+      }
+      throw new Error(`API请求失败: ${response.status}`);
+    }
+    
+    return response;
+  } catch (error) {
+    if (retryCount > 0 && (error.name === 'AbortError' || error.name === 'TypeError')) {
+      // 超时或网络错误，重试1次
+      console.log(`API请求异常(${error.name})，重试中...`);
+      return fetchWithRetry(url, options, retryCount - 1);
+    }
+    throw error;
+  }
+}
+
 class ExtensionBackground {
   constructor() {
     this.storageKeys = {
@@ -94,17 +134,9 @@ class ExtensionBackground {
   }
 
   async handleTranslation(word, sendResponse) {
-    const requestOptions = {
-      method: 'GET',
-      redirect: 'follow'
-    };
-
     try {
       const apiUrl = `${CONFIG.API_BASE_URL || 'http://chrome.yizhiweb.top:8080'}${CONFIG.ENDPOINTS.TRANSLATE || '/wx/chrome/crx/translate'}`;
-      const response = await fetch(`${apiUrl}?word=${encodeURIComponent(word)}`, requestOptions);
-      if (!response.ok) {
-        throw new Error(`翻译API请求失败: ${response.status}`);
-      }
+      const response = await fetchWithRetry(`${apiUrl}?word=${encodeURIComponent(word)}`);
       const result = await response.json();
       const translation = result?.text || `${word}的翻译`;
       
@@ -205,7 +237,7 @@ class ExtensionBackground {
   async getPhonetics(word) {
     try {
       // 如果是词组(包含空格)，跳过音标获取
-      if (word.includes(' ')) {
+      if (word.includes(' ') || word.length === 0) {
         return {
           phoneticText: '',
           audioUrl: ''
@@ -213,7 +245,7 @@ class ExtensionBackground {
       }
       
       const apiUrl = `${CONFIG.API_BASE_URL || 'http://chrome.yizhiweb.top:8080'}${CONFIG.ENDPOINTS.PHONETICS || '/wx/chrome/crx/phonetics'}`;
-      const response = await fetch(`${apiUrl}?word=${encodeURIComponent(word)}`);
+      const response = await fetchWithRetry(`${apiUrl}?word=${encodeURIComponent(word)}`);
       const data = await response.json();
       
       return {
