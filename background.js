@@ -143,7 +143,7 @@ class ExtensionBackground {
         case 'show_notification':
           chrome.notifications.create({
             type: 'basic',
-            iconUrl: 'icons/icon48.png',
+            iconUrl: 'icons/image_48.png',
             title: request.title,
             message: request.message
           });
