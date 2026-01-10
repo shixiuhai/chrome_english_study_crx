@@ -105,12 +105,39 @@ class WordMarker {
         
         // 创建新的范围，跳过前后空格
         const newRange = document.createRange();
-        newRange.setStart(range.startContainer, range.startOffset + leadingSpaces);
-        newRange.setEnd(range.endContainer, range.endOffset - trailingSpaces);
         
-        // 更新选区
-        selection.removeAllRanges();
-        selection.addRange(newRange);
+        // 验证startOffset有效性
+        const startOffset = range.startOffset + leadingSpaces;
+        const startContainerLength = range.startContainer.nodeType === Node.TEXT_NODE ? range.startContainer.length : 0;
+        
+        // 验证endOffset有效性
+        const endOffset = range.endOffset - trailingSpaces;
+        const endContainerLength = range.endContainer.nodeType === Node.TEXT_NODE ? range.endContainer.length : 0;
+        
+        // 确保offset值有效，避免IndexSizeError
+        const validStartOffset = Math.max(0, Math.min(startOffset, startContainerLength));
+        let validEndOffset = Math.max(0, endOffset);
+        
+        // 如果是同一容器，确保endOffset不小于startOffset
+        if (range.startContainer === range.endContainer) {
+          validEndOffset = Math.max(validStartOffset, Math.min(validEndOffset, endContainerLength));
+        } else {
+          validEndOffset = Math.min(validEndOffset, endContainerLength);
+        }
+        
+        try {
+          newRange.setStart(range.startContainer, validStartOffset);
+          newRange.setEnd(range.endContainer, validEndOffset);
+          
+          // 更新选区
+          selection.removeAllRanges();
+          selection.addRange(newRange);
+        } catch (e) {
+          console.error('调整选区失败:', e);
+          // 失败时使用原始选区
+          selection.removeAllRanges();
+          selection.addRange(range);
+        }
         
         if (markCheck(trimmedText)) {
           this.markWord(selection, trimmedText);
