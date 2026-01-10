@@ -266,7 +266,7 @@ class ExtensionBackground {
       if (word.includes(' ') || word.length === 0) {
         return {
           phoneticText: '',
-          audioUrl: ''
+          audioUrl: '' // 保留字段以保持向后兼容
         };
       }
       
@@ -276,7 +276,7 @@ class ExtensionBackground {
       
       return {
         phoneticText: data?.phoneticText || '',
-        audioUrl: data?.audioUrl || ''
+        audioUrl: '' // 不再获取音频URL，直接返回空字符串
       };
 
     } catch (error) {

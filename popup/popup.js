@@ -105,29 +105,7 @@ class WordBook {
   // 添加朗读方法
   async speakWord(word) {
     try {
-      // 词组直接使用TTS
-      if (word.includes(' ')) {
-        this.fallbackTTS(word);
-        await this.incrementReviewCount(word);
-        return;
-      }
-
-      // 尝试获取API音频URL
-      const phoneticsData = await this.getPhonetics(word);
-      if (phoneticsData.audioUrl) {
-        try {
-          const audio = new Audio(phoneticsData.audioUrl);
-          audio.preload = 'auto';
-          audio.onerror = () => this.fallbackTTS(word);
-          await audio.play();
-          await this.incrementReviewCount(word);
-          return;
-        } catch (e) {
-          console.error('API音频播放失败:', e);
-        }
-      }
-      
-      // 回退到TTS
+      // 直接使用浏览器原生TTS，不再调用API获取音频
       this.fallbackTTS(word);
       await this.incrementReviewCount(word);
     } catch (error) {
