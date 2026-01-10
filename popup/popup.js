@@ -148,6 +148,9 @@ class WordBook {
       this.renderWordList();
       this.setupEventListeners();
     } catch (error) {
+      console.error('初始化失败:', error);
+      // 确保在初始化失败时也能显示错误信息并结束加载状态
+      this.words = [];
       this.showError('加载单词本失败，请重试');
     }
   }
@@ -379,14 +382,17 @@ class WordBook {
         });
 
         // 保存到本地
-        await new Promise((resolve) => {
-          chrome.runtime.sendMessage(
-            {type: 'save_dictionary', dictionary},
-            () => {
-              resolve();
+      await new Promise((resolve) => {
+        chrome.runtime.sendMessage(
+          {type: 'save_dictionary', dictionary},
+          (response) => {
+            if (chrome.runtime.lastError) {
+              console.error('保存字典失败:', chrome.runtime.lastError);
             }
-          );
-        });
+            resolve();
+          }
+        );
+      });
 
         // 保存最新的同步时间戳
         await new Promise((resolve) => {
@@ -461,13 +467,33 @@ class WordBook {
       'Content-Type': 'application/json'
     };
 
-    const response = await fetch(url, {
-      method,
-      headers,
-      body: params
-    });
-
-    return await response.json();
+    try {
+      // 设置超时控制，避免请求卡住
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 10000); // 10秒超时
+      
+      const response = await fetch(url, {
+        method,
+        headers,
+        body: params,
+        signal: controller.signal
+      });
+      
+      clearTimeout(timeoutId);
+      
+      if (!response.ok) {
+        throw new Error(`API请求失败: ${response.status}`);
+      }
+      
+      return await response.json();
+    } catch (error) {
+      console.error(`调用${action} API失败:`, error);
+      // 处理网络错误或超时
+      if (error.name === 'AbortError') {
+        throw new Error('API请求超时');
+      }
+      throw error;
+    }
   }
 
   
@@ -522,15 +548,17 @@ class WordBook {
 
   async loadWords() {
     try {
-      return await new Promise((resolve, reject) => {
+      return await new Promise((resolve) => {
         chrome.runtime.sendMessage(
           {type: 'get_dictionary'},
-          async (response) => {
+          (response) => {
+            // 确保在所有情况下都初始化 this.words
+            this.words = [];
+            
             if (chrome.runtime.lastError) {
               // 特别处理扩展上下文被销毁的错误
               if (chrome.runtime.lastError.message.includes('Extension context invalidated')) {
                 console.log('扩展上下文已销毁，显示空单词本');
-                this.words = [];
                 this.showError('扩展上下文已更新，请重新打开插件');
                 return resolve();
               }
@@ -561,10 +589,12 @@ class WordBook {
         );
       });
     } catch (error) {
+      // 确保在所有情况下都初始化 this.words
+      this.words = [];
+      
       // 特别处理扩展上下文被销毁的错误
       if (error.message.includes('Extension context invalidated')) {
         console.log('扩展上下文已销毁，显示空单词本');
-        this.words = [];
         this.showError('扩展上下文已更新，请重新打开插件');
         return Promise.resolve();
       }

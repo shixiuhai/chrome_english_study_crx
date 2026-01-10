@@ -32,11 +32,11 @@ if (self.CONFIG) {
 }
 
 // 通用API请求函数，支持自动重试
-async function fetchWithRetry(url, options = {}, retryCount = 1) {
+async function fetchWithRetry(url, options = {}, retryCount = 3) {
   const defaultOptions = {
     method: 'GET',
     redirect: 'follow',
-    timeout: 5000, // 5秒超时
+    timeout: 8000, // 8秒超时
     ...options
   };
 
@@ -53,8 +53,8 @@ async function fetchWithRetry(url, options = {}, retryCount = 1) {
     
     if (!response.ok) {
       if (retryCount > 0 && (response.status >= 500 || response.status === 521)) {
-        // 服务器错误或Cloudflare 521错误，重试1次
-        console.log(`API请求失败(${response.status})，重试中...`);
+        // 服务器错误或Cloudflare 521错误，重试
+        console.log(`API请求失败(${response.status})，重试中... (剩余${retryCount}次)`);
         return fetchWithRetry(url, options, retryCount - 1);
       }
       throw new Error(`API请求失败: ${response.status}`);
@@ -62,9 +62,9 @@ async function fetchWithRetry(url, options = {}, retryCount = 1) {
     
     return response;
   } catch (error) {
-    if (retryCount > 0 && (error.name === 'AbortError' || error.name === 'TypeError')) {
-      // 超时或网络错误，重试1次
-      console.log(`API请求异常(${error.name})，重试中...`);
+    if (retryCount > 0 && (error.name === 'AbortError' || error.name === 'TypeError' || error.message.includes('521'))) {
+      // 超时、网络错误或521错误，重试
+      console.log(`API请求异常(${error.name || error.message})，重试中... (剩余${retryCount}次)`);
       return fetchWithRetry(url, options, retryCount - 1);
     }
     throw error;
@@ -164,8 +164,31 @@ class ExtensionBackground {
     try {
       const apiUrl = `${CONFIG.API_BASE_URL}${CONFIG.ENDPOINTS.TRANSLATE}`;
       const response = await fetchWithRetry(`${apiUrl}?word=${encodeURIComponent(word)}`);
-      const result = await response.json();
-      const translation = result?.text || `${word}的翻译`;
+      
+      // 检查响应状态
+      if (!response.ok) {
+        console.error('翻译API请求失败:', response.status);
+        // 回退到原虚拟翻译
+        const fallbackTranslation = `${word}的翻译`;
+        await this.saveWord(word, fallbackTranslation);
+        sendResponse({translation: fallbackTranslation});
+        return;
+      }
+      
+      let result;
+      try {
+        result = await response.json();
+      } catch (jsonError) {
+        console.error('翻译API返回数据格式错误:', jsonError);
+        // 回退到原虚拟翻译
+        const fallbackTranslation = `${word}的翻译`;
+        await this.saveWord(word, fallbackTranslation);
+        sendResponse({translation: fallbackTranslation});
+        return;
+      }
+      
+      // 处理可能的乱码情况
+      const translation = this.sanitizeTranslation(result?.text) || `${word}的翻译`;
       
       // 只保存到字典，不获取音标
       await this.saveWord(word, translation);
@@ -180,6 +203,24 @@ class ExtensionBackground {
       await this.saveWord(word, fallbackTranslation);
       sendResponse({translation: fallbackTranslation});
     }
+  }
+  
+  // 清理翻译结果，处理乱码情况
+  sanitizeTranslation(text) {
+    if (!text || typeof text !== 'string') {
+      return '';
+    }
+    
+    // 检测并清理乱码
+    const cleanedText = text
+      // 移除不可见字符
+      .replace(/[\x00-\x1F\x7F]/g, '')
+      // 替换可能的乱码序列
+      .replace(/æµè¯/g, '测试')
+      // 移除多余空格
+      .trim();
+    
+    return cleanedText;
   }
 
   async saveWord(word, translation) {
@@ -289,7 +330,16 @@ class ExtensionBackground {
         };
       }
       
-      const data = await response.json();
+      let data;
+      try {
+        data = await response.json();
+      } catch (jsonError) {
+        console.error('音标API返回数据格式错误:', jsonError);
+        return {
+          phoneticText: '',
+          audioUrl: ''
+        };
+      }
       
       return {
         phoneticText: data?.phoneticText || '',
