@@ -125,6 +125,15 @@ class ExtensionBackground {
             .then(phonetics => sendResponse({phonetics}));
           return true;
           
+        case 'save_dictionary':
+          // 保存整个字典到本地存储
+          chrome.storage.local.set({[this.storageKeys.words]: request.dictionary},
+            () => {
+              sendResponse({success: true});
+            }
+          );
+          return true;
+          
         case 'show_notification':
           chrome.notifications.create({
             type: 'basic',

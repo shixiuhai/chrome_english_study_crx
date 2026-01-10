@@ -234,13 +234,15 @@ class WordBook {
       const response = await this.callSyncAPI('download', { userId: this.userId });
 
       if (response.success) {
-        // 检查时间戳一致性
-        if (response.timestamp && response.timestamp <= lastSyncTimestamp) {
+        const wordbook = response.wordbook || [];
+        
+        // 检查时间戳一致性：只有当lastSyncTimestamp不为0且远程时间戳确实较旧时，才跳过更新
+        const serverTimestamp = response.timestamp || 0;
+        if (lastSyncTimestamp > 0 && serverTimestamp <= lastSyncTimestamp && wordbook.length === 0) {
           alert('当前单词本已是最新版本，无需更新');
           return;
         }
 
-        const wordbook = response.wordbook || [];
         if (wordbook.length === 0) {
           alert('远程单词本为空');
           return;
