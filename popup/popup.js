@@ -178,6 +178,7 @@ class WordBook {
       chrome.storage.local.get(['userId', 'lastSyncTimestamp'], (result) => {
         this.userId = result.userId || '';
         document.getElementById('userIdInput').value = this.userId;
+        this.updateUserIdUI(); // 新增：更新UI状态
         resolve();
       });
     });
@@ -191,13 +192,62 @@ class WordBook {
       return;
     }
     
+    // 增强确认机制：任何修改操作都显示确认提示
+    if (this.userId) {
+      // 如果是修改已存在的用户ID，显示确认提示
+      if (this.userId !== userId) {
+        const confirmed = await this.confirm(
+          '修改用户ID将影响单词本同步，确定要继续吗？', 
+          '修改确认'
+        );
+        if (!confirmed) {
+          // 恢复原用户ID
+          document.getElementById('userIdInput').value = this.userId;
+          return;
+        }
+      }
+    }
+    
     return new Promise((resolve) => {
       chrome.storage.local.set({ userId }, () => {
         this.userId = userId;
+        this.updateUserIdUI();
         this.alert('用户ID保存成功');
         resolve();
       });
     });
+  }
+  
+  // 清除用户ID
+  async clearUserId() {
+    if (!this.userId) return;
+    
+    const confirmed = await this.confirm('确定要清除用户ID吗？', '清除确认');
+    if (!confirmed) return;
+    
+    return new Promise((resolve) => {
+      chrome.storage.local.remove('userId', () => {
+        this.userId = '';
+        document.getElementById('userIdInput').value = '';
+        this.updateUserIdUI();
+        this.alert('用户ID已清除');
+        resolve();
+      });
+    });
+  }
+  
+  // 更新用户ID UI状态
+  updateUserIdUI() {
+    const saveBtn = document.getElementById('saveUserIdBtn');
+    const clearBtn = document.getElementById('clearUserIdBtn');
+    
+    if (this.userId) {
+      saveBtn.textContent = '修改';
+      clearBtn.style.display = 'inline-block';
+    } else {
+      saveBtn.textContent = '保存';
+      clearBtn.style.display = 'none';
+    }
   }
 
   // 设置同步事件监听
@@ -205,6 +255,11 @@ class WordBook {
     // 保存用户ID
     document.getElementById('saveUserIdBtn').addEventListener('click', () => {
       this.saveUserId();
+    });
+    
+    // 清除用户ID
+    document.getElementById('clearUserIdBtn').addEventListener('click', () => {
+      this.clearUserId();
     });
 
     // 拉取单词本

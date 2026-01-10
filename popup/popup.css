@@ -475,6 +475,21 @@ body {
   margin: 10px 0;
 }
 
+.userIdButtons {
+  display: flex;
+  gap: 8px;
+}
+
+.clear-btn {
+  background: var(--danger-color) !important;
+  color: white !important;
+}
+
+.clear-btn:hover {
+  background: #f56565 !important;
+  transform: translateY(-1px) !important;
+}
+
 #userIdInput {
   flex: 1;
   padding: 8px 12px;

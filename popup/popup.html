@@ -11,7 +11,10 @@
       <h1><span class="icon">📚</span> 单词本</h1>
       <div class="sync-config">
         <input type="text" id="userIdInput" placeholder="输入用户ID">
-        <button id="saveUserIdBtn">保存</button>
+        <div class="userIdButtons">
+          <button id="saveUserIdBtn">保存</button>
+          <button id="clearUserIdBtn" class="clear-btn" style="display: none;">清除</button>
+        </div>
       </div>
       <div class="search-box">
         <input type="text" placeholder="搜索单词...">
