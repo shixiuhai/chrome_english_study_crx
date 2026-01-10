@@ -626,6 +626,22 @@ class WordBook {
     
     // 添加事件监听
     this.setupDomainExclusionEventListeners();
+    
+    // 初始化高级配置折叠功能
+    this.setupAdvancedConfigToggle();
+  }
+  
+  // 添加高级配置折叠功能
+  setupAdvancedConfigToggle() {
+    const toggleBtn = document.querySelector('.toggle-config-btn');
+    const configContent = document.querySelector('.advanced-config-content');
+    const toggleIcon = toggleBtn.querySelector('.toggle-icon');
+    
+    toggleBtn.addEventListener('click', () => {
+      const isVisible = configContent.style.display === 'block';
+      configContent.style.display = isVisible ? 'none' : 'block';
+      toggleIcon.textContent = isVisible ? '▼' : '▲';
+    });
   }
 
   // 获取当前标签页的域名
