@@ -79,8 +79,8 @@
 - 数据存储管理(Chrome storage API)
 - 消息通信处理
 - 单词翻译功能
-- 新增音标获取功能(batchGetPhonetics)
-- 新增音标批量更新功能(batchUpdatePhonetics)
+- 音标获取功能(getPhonetics)，仅在手动请求时调用
+- 扩展上下文错误处理，确保稳定性
 
 ## API需求
 1. 翻译API: /chrome/crx/translate?word=xxx (返回: { "text": "翻译结果" })
