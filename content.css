@@ -11,7 +11,7 @@
 }
 
 .word-tooltip {
-  position: absolute;
+  position: fixed;
   left: 50%;
   top: calc(100% + 8px);
   transform: translateX(-50%);
@@ -20,7 +20,7 @@
   padding: 12px 16px;
   border: none;
   border-radius: 12px;
-  z-index: 10000;
+  z-index: 999999 !important;
   display: none;
   box-shadow: 0 8px 25px rgba(0, 0, 0, 0.2);
   min-width: 150px;
@@ -31,6 +31,8 @@
   backdrop-filter: blur(10px);
   animation: fadeInUp 0.2s ease-out;
   text-align: center;
+  pointer-events: all;
+  overflow: visible;
 }
 
 .word-tooltip::before {

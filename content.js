@@ -455,8 +455,37 @@ class WordMarker {
 
     // 改进的悬浮窗显示控制
     let hideTimeout;
-    mark.addEventListener('mouseenter', () => {
+    mark.addEventListener('mouseenter', (e) => {
       clearTimeout(hideTimeout);
+      
+      // 计算tooltip的位置（固定定位需要重新计算）
+      const rect = mark.getBoundingClientRect();
+      const tooltipRect = tooltip.getBoundingClientRect();
+      
+      // 计算基本位置
+      let left = rect.left + rect.width / 2;
+      let top = rect.bottom + 8;
+      
+      // 确保tooltip不会超出视口
+      const viewportWidth = window.innerWidth;
+      const viewportHeight = window.innerHeight;
+      
+      // 调整水平位置，避免超出视口
+      if (left - tooltipRect.width / 2 < 0) {
+        left = tooltipRect.width / 2 + 10;
+      } else if (left + tooltipRect.width / 2 > viewportWidth) {
+        left = viewportWidth - tooltipRect.width / 2 - 10;
+      }
+      
+      // 调整垂直位置，避免超出视口
+      if (top + tooltipRect.height > viewportHeight) {
+        top = rect.top - tooltipRect.height - 8;
+      }
+      
+      tooltip.style.left = `${left}px`;
+      tooltip.style.top = `${top}px`;
+      tooltip.style.transform = 'translateX(-50%)';
+      
       tooltip.style.display = 'block';
     });
     
