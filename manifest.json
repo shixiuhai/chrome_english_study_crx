@@ -4,7 +4,7 @@
   "version": "1.0",
   "description": "点击网页英文单词进行翻译和记录",
   "permissions": ["storage", "activeTab", "notifications"],
-  "host_permissions": ["chrome.yizhiweb.top"],
+  "host_permissions": ["https://chrome.yizhiweb.top/*"],
   "content_security_policy": {
     "extension_pages": "script-src 'self'; object-src 'self';"
   },
