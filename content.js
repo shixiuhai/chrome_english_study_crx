@@ -55,7 +55,7 @@ function findAllMatches(text, regex) {
 class WordMarker {
   constructor() {
     this.markedWords = new Map();
-    this.maxMarkedWords = 1000; // 限制最大标记数量，避免内存泄漏
+    this.maxMarkedWords = window.CONFIG?.MAX_MARKED_WORDS || 1000; // 使用配置文件中的最大标记数量
     this.translationQueue = [];
     this.currentTranslations = 0;
     this.maxTranslations = 5; // 最大同时翻译数量
@@ -184,7 +184,7 @@ class WordMarker {
     let node;
     let nodeCount = 0;
     
-    while ((node = walker.nextNode()) && nodeCount < 2000) { // 增加节点处理数量
+    while ((node = walker.nextNode()) && nodeCount < (window.CONFIG?.MAX_TEXT_NODES || 2000)) { // 使用配置文件中的最大文本节点数量
       const parent = node.parentNode;
       if (parent.nodeName === 'SCRIPT' || parent.nodeName === 'STYLE' || parent.nodeName === 'NOSCRIPT') {
         continue;
