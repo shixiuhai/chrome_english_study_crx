@@ -14,8 +14,8 @@ const configData = {
   },
   
   // 单词数量限制
-  WORD_COUNT_LIMIT: 50, // 单次选中单词数量限制
-  MAX_MARKED_WORDS: 1000, // 最大标记单词数量
+  WORD_COUNT_LIMIT: 99, // 单次选中单词数量限制
+  MAX_MARKED_WORDS: 8000, // 最大标记单词数量
   MAX_TEXT_NODES: 2000, // 最大处理文本节点数量
   
   // 样式配置
