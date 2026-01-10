@@ -130,11 +130,13 @@ class ExtensionBackground {
     if (!dict[word]) {
       // 先创建基本词条
       const phoneticsData = await this.getPhonetics(word);
+      const now = Date.now();
       dict[word] = {
         translation,
         phonetics: phoneticsData.phoneticText, // 只存储音标文本
-        added: Date.now(),
-        reviewed: 0
+        added: now,
+        reviewed: 0,
+        lastModified: now // 新增：最后修改时间
       };
       await chrome.storage.local.set({[this.storageKeys.words]: dict});
     }
@@ -185,6 +187,7 @@ class ExtensionBackground {
     const dict = await this.getDictionary();
     if (dict[word]) {
       dict[word].translation = newTranslation;
+      dict[word].lastModified = Date.now(); // 新增：更新最后修改时间
       await chrome.storage.local.set({[this.storageKeys.words]: dict});
     }
   }
@@ -193,6 +196,7 @@ class ExtensionBackground {
     const dict = await this.getDictionary();
     if (dict[word]) {
       dict[word].reviewed = (dict[word].reviewed || 0) + 1;
+      dict[word].lastModified = Date.now(); // 新增：更新最后修改时间
       await chrome.storage.local.set({[this.storageKeys.words]: dict});
     }
     return dict[word]?.reviewed || 0;

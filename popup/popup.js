@@ -139,8 +139,8 @@ class WordBook {
     }
 
     try {
-      // 获取当前单词本数据
-      const dictionary = await new Promise((resolve) => {
+      // 1. 获取当前本地数据
+      const localDictionary = await new Promise((resolve) => {
         chrome.runtime.sendMessage(
           {type: 'get_dictionary'},
           (response) => {
@@ -149,31 +149,65 @@ class WordBook {
         );
       });
 
-      // 转换为API需要的格式
-      const wordbook = Object.entries(dictionary).map(([word, data]) => {
+      // 2. 下载服务器最新数据（新增：上传前先获取服务器最新数据）
+      const serverResponse = await this.callSyncAPI('download', { userId: this.userId });
+      const serverWordbook = serverResponse.success ? serverResponse.wordbook : [];
+      
+      // 3. 转换服务器数据为本地格式
+      const serverDictionary = {};
+      serverWordbook.forEach(wordData => {
+        serverDictionary[wordData.word] = {
+          translation: wordData.translation,
+          phonetics: wordData.phonetics,
+          added: wordData.added,
+          reviewed: wordData.reviewed || 0,
+          lastModified: wordData.lastModified || wordData.added // 兼容旧数据
+        };
+      });
+
+      // 4. 合并数据：保留每个单词的最新版本
+      const mergedDictionary = { ...serverDictionary };
+      
+      Object.entries(localDictionary).forEach(([word, localData]) => {
+        const serverData = serverDictionary[word];
+        const localLastModified = localData.lastModified || localData.added || Date.now();
+        const serverLastModified = serverData?.lastModified || serverData?.added || 0;
+        
+        // 如果本地数据更新，或服务器没有该数据，则保留本地数据
+        if (!serverData || localLastModified > serverLastModified) {
+          mergedDictionary[word] = {
+            ...localData,
+            lastModified: localLastModified // 确保lastModified存在
+          };
+        }
+      });
+
+      // 5. 转换为API需要的格式（合并后的数据）
+      const wordbook = Object.entries(mergedDictionary).map(([word, data]) => {
         return {
           word,
           translation: data.translation,
           phonetics: data.phonetics || '',
           added: data.added,
-          reviewed: data.reviewed || 0
+          reviewed: data.reviewed || 0,
+          lastModified: data.lastModified || Date.now() // 确保lastModified存在
         };
       });
 
-      // 调用上传API
-      const response = await this.callSyncAPI('upload', {
+      // 6. 调用上传API
+      const uploadResponse = await this.callSyncAPI('upload', {
         userId: this.userId,
         wordbook
       });
 
-      if (response.success) {
+      if (uploadResponse.success) {
         // 保存服务器返回的时间戳
         await new Promise((resolve) => {
-          chrome.storage.local.set({ lastSyncTimestamp: response.timestamp }, resolve);
+          chrome.storage.local.set({ lastSyncTimestamp: uploadResponse.timestamp }, resolve);
         });
         alert(`单词本同步成功，共 ${wordbook.length} 个单词`);
       } else {
-        alert('单词本同步失败: ' + response.message);
+        alert('单词本同步失败: ' + uploadResponse.message);
       }
     } catch (error) {
       console.error('上传单词本失败:', error);
