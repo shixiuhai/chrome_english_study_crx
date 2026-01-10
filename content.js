@@ -205,21 +205,65 @@ class WordMarker {
 
   // 在文本节点中标记单个匹配
   markTextNode(textNode, match, markData) {
-    const range = document.createRange();
-    range.setStart(textNode, match.index);
-    range.setEnd(textNode, match.index + match.length);
+    try {
+      // 检查文本节点是否仍在文档中
+      if (!document.contains(textNode)) {
+        return;
+      }
+      
+      // 检查文本节点内容是否已更改
+      const currentText = textNode.nodeValue;
+      if (!currentText || currentText.length < match.index + match.length) {
+        return;
+      }
+      
+      const range = document.createRange();
+      
+      // 验证range参数有效性
+      const validStartIndex = Math.max(0, Math.min(match.index, currentText.length));
+      const validEndIndex = Math.min(match.index + match.length, currentText.length);
+      
+      if (validStartIndex >= validEndIndex) {
+        return;
+      }
+      
+      range.setStart(textNode, validStartIndex);
+      range.setEnd(textNode, validEndIndex);
 
-    const selection = window.getSelection();
-    selection.removeAllRanges();
-    selection.addRange(range);
+      const selection = window.getSelection();
+      
+      // 检查range是否在文档中
+      let isRangeInDocument = false;
+      try {
+        // 通过检查范围的commonAncestorContainer是否在文档中来验证
+        isRangeInDocument = document.contains(range.commonAncestorContainer);
+      } catch (e) {
+        console.error('检查range是否在文档中失败:', e);
+      }
+      
+      if (isRangeInDocument) {
+        selection.removeAllRanges();
+        selection.addRange(range);
+      } else {
+        // 如果range不在文档中，创建一个新的range
+        const newRange = document.createRange();
+        newRange.selectNodeContents(textNode);
+        selection.removeAllRanges();
+        selection.addRange(newRange);
+      }
 
-    const markId = `mark_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
-    this.createMarkElement(range, match.text, markData.translation, markId, range.cloneContents());
-    this.markedWords.set(markId, {
-      text: match.text,
-      translation: markData.translation,
-      originalContent: range.cloneContents()
-    });
+      const markId = `mark_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+      this.createMarkElement(range, match.text, markData.translation, markId, range.cloneContents());
+      this.markedWords.set(markId, {
+        text: match.text,
+        translation: markData.translation,
+        originalContent: range.cloneContents()
+      });
+    } catch (e) {
+      console.error('标记文本节点失败:', e);
+      // 清除选区，避免影响后续操作
+      window.getSelection().removeAllRanges();
+    }
   }
 
   // 新增：获取所有标记
