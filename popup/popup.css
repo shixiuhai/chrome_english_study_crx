@@ -349,6 +349,125 @@ body {
   background: rgba(255, 255, 255, 0.5);
 }
 
+/* 自定义对话框样式 */
+.custom-dialog {
+  position: fixed;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  background: var(--card-bg);
+  border-radius: 16px;
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+  z-index: 1000;
+  min-width: 280px;
+  max-width: 90%;
+  display: none; /* 默认隐藏 */
+}
+
+.dialog-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0, 0, 0, 0.5);
+  z-index: 999;
+  display: none; /* 默认隐藏 */
+}
+
+.dialog-content {
+  padding: 0;
+}
+
+.dialog-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 16px 20px;
+  border-bottom: 1px solid #edf2f7;
+}
+
+.dialog-header h3 {
+  margin: 0;
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--text-color);
+}
+
+.dialog-close {
+  background: none;
+  border: none;
+  font-size: 20px;
+  cursor: pointer;
+  color: var(--text-light);
+  width: 24px;
+  height: 24px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  transition: all 0.2s ease;
+}
+
+.dialog-close:hover {
+  background: #f7fafc;
+  color: var(--text-color);
+}
+
+.dialog-body {
+  padding: 20px;
+  font-size: 14px;
+  color: var(--text-color);
+  line-height: 1.5;
+}
+
+.dialog-footer {
+  display: flex;
+  gap: 10px;
+  justify-content: flex-end;
+  padding: 0 20px 20px;
+}
+
+.dialog-btn {
+  padding: 8px 16px;
+  border: none;
+  border-radius: 20px;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.dialog-btn-primary {
+  background: var(--primary-color);
+  color: white;
+}
+
+.dialog-btn-primary:hover {
+  background: var(--primary-dark);
+}
+
+.dialog-btn-secondary {
+  background: #f7fafc;
+  color: var(--text-light);
+}
+
+.dialog-btn-secondary:hover {
+  background: #edf2f7;
+  color: var(--text-color);
+}
+
+/* 显示对话框 */
+.dialog-show {
+  display: block;
+  animation: fadeIn 0.2s ease;
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; transform: translate(-50%, -55%); }
+  to { opacity: 1; transform: translate(-50%, -50%); }
+}
+
 /* 同步配置区域 */
 .sync-config {
   display: flex;

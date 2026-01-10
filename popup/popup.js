@@ -6,6 +6,98 @@ class WordBook {
     this.userId = '';
     
     this.init();
+    this.initDialog();
+  }
+
+  // 初始化对话框
+  initDialog() {
+    // 关闭按钮事件
+    document.querySelector('.dialog-close').addEventListener('click', () => {
+      this.hideDialog();
+    });
+    
+    // 点击遮罩层关闭对话框
+    document.getElementById('dialogOverlay').addEventListener('click', () => {
+      this.hideDialog();
+    });
+    
+    // ESC键关闭对话框
+    document.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape') {
+        this.hideDialog();
+      }
+    });
+  }
+  
+  // 显示自定义对话框
+  showDialog(title, message, options = {}) {
+    const { 
+      type = 'alert', 
+      primaryBtn = '确定', 
+      secondaryBtn = '取消', 
+      onPrimary, 
+      onSecondary 
+    } = options;
+    
+    // 设置标题和内容
+    document.getElementById('dialogTitle').textContent = title;
+    document.getElementById('dialogBody').textContent = message;
+    
+    // 设置按钮
+    const footer = document.getElementById('dialogFooter');
+    footer.innerHTML = '';
+    
+    // 主按钮
+    const primaryButton = document.createElement('button');
+    primaryButton.className = 'dialog-btn dialog-btn-primary';
+    primaryButton.textContent = primaryBtn;
+    primaryButton.addEventListener('click', () => {
+      this.hideDialog();
+      if (onPrimary) onPrimary();
+    });
+    footer.appendChild(primaryButton);
+    
+    // 只有confirm类型才显示次要按钮
+    if (type === 'confirm') {
+      const secondaryButton = document.createElement('button');
+      secondaryButton.className = 'dialog-btn dialog-btn-secondary';
+      secondaryButton.textContent = secondaryBtn;
+      secondaryButton.addEventListener('click', () => {
+        this.hideDialog();
+        if (onSecondary) onSecondary();
+      });
+      footer.appendChild(secondaryButton);
+    }
+    
+    // 显示对话框
+    document.getElementById('customDialog').classList.add('dialog-show');
+    document.getElementById('dialogOverlay').classList.add('dialog-show');
+  }
+  
+  // 隐藏自定义对话框
+  hideDialog() {
+    document.getElementById('customDialog').classList.remove('dialog-show');
+    document.getElementById('dialogOverlay').classList.remove('dialog-show');
+  }
+  
+  // 替换alert方法
+  alert(message, title = '提示') {
+    return new Promise((resolve) => {
+      this.showDialog(title, message, {
+        onPrimary: resolve
+      });
+    });
+  }
+  
+  // 替换confirm方法
+  confirm(message, title = '确认') {
+    return new Promise((resolve) => {
+      this.showDialog(title, message, {
+        type: 'confirm',
+        onPrimary: () => resolve(true),
+        onSecondary: () => resolve(false)
+      });
+    });
   }
 
   // 添加朗读方法
@@ -95,14 +187,14 @@ class WordBook {
   async saveUserId() {
     const userId = document.getElementById('userIdInput').value.trim();
     if (!userId) {
-      alert('请输入有效的用户ID');
+      await this.alert('请输入有效的用户ID');
       return;
     }
     
     return new Promise((resolve) => {
       chrome.storage.local.set({ userId }, () => {
         this.userId = userId;
-        alert('用户ID保存成功');
+        this.alert('用户ID保存成功');
         resolve();
       });
     });
@@ -134,7 +226,7 @@ class WordBook {
   // 上传单词本
   async uploadWordbook() {
     if (!this.userId) {
-      alert('请先设置用户ID');
+      await this.alert('请先设置用户ID');
       return;
     }
 
@@ -205,20 +297,20 @@ class WordBook {
         await new Promise((resolve) => {
           chrome.storage.local.set({ lastSyncTimestamp: uploadResponse.timestamp }, resolve);
         });
-        alert(`单词本同步成功，共 ${wordbook.length} 个单词`);
+        await this.alert(`单词本同步成功，共 ${wordbook.length} 个单词`);
       } else {
-        alert('单词本同步失败: ' + uploadResponse.message);
+        await this.alert('单词本同步失败: ' + uploadResponse.message);
       }
     } catch (error) {
       console.error('上传单词本失败:', error);
-      alert('上传单词本失败，请检查网络连接');
+      await this.alert('上传单词本失败，请检查网络连接');
     }
   }
 
   // 拉取单词本
   async downloadWordbook() {
     if (!this.userId) {
-      alert('请先设置用户ID');
+      await this.alert('请先设置用户ID');
       return;
     }
 
@@ -239,12 +331,12 @@ class WordBook {
         // 检查时间戳一致性：只有当lastSyncTimestamp不为0且远程时间戳确实较旧时，才跳过更新
         const serverTimestamp = response.timestamp || 0;
         if (lastSyncTimestamp > 0 && serverTimestamp <= lastSyncTimestamp && wordbook.length === 0) {
-          alert('当前单词本已是最新版本，无需更新');
+          await this.alert('当前单词本已是最新版本，无需更新');
           return;
         }
 
         if (wordbook.length === 0) {
-          alert('远程单词本为空');
+          await this.alert('远程单词本为空');
           return;
         }
 
@@ -278,24 +370,24 @@ class WordBook {
         await this.loadWordsWithPhonetics();
         this.renderWordList();
         
-        alert(`单词本拉取成功，共 ${wordbook.length} 个单词`);
+        await this.alert(`单词本拉取成功，共 ${wordbook.length} 个单词`);
       } else {
-        alert('单词本拉取失败: ' + response.message);
+        await this.alert('单词本拉取失败: ' + response.message);
       }
     } catch (error) {
       console.error('拉取单词本失败:', error);
-      alert('拉取单词本失败，请检查网络连接');
+      await this.alert('拉取单词本失败，请检查网络连接');
     }
   }
 
   // 删除远程单词本
   async deleteRemoteWordbook() {
     if (!this.userId) {
-      alert('请先设置用户ID');
+      await this.alert('请先设置用户ID');
       return;
     }
 
-    if (!confirm('确定要删除远程单词本吗？此操作不可恢复！')) {
+    if (!(await this.confirm('确定要删除远程单词本吗？此操作不可恢复！'))) {
       return;
     }
 
@@ -304,13 +396,13 @@ class WordBook {
       const response = await this.callSyncAPI('delete', { userId: this.userId });
 
       if (response.success) {
-        alert('远程单词本删除成功');
+        await this.alert('远程单词本删除成功');
       } else {
-        alert('远程单词本删除失败: ' + response.message);
+        await this.alert('远程单词本删除失败: ' + response.message);
       }
     } catch (error) {
       console.error('删除远程单词本失败:', error);
-      alert('删除远程单词本失败，请检查网络连接');
+      await this.alert('删除远程单词本失败，请检查网络连接');
     }
   }
 
@@ -487,7 +579,7 @@ class WordBook {
     const card = e.target.closest('.word-card');
     const word = card.dataset.word;
     
-    if (!confirm(`确定要删除单词 "${word}" 吗？`)) return;
+    if (!(await this.confirm(`确定要删除单词 "${word}" 吗？`))) return;
     
     try {
       await new Promise((resolve) => {
@@ -540,7 +632,7 @@ class WordBook {
 
   async saveWordEdit(word, newTranslation, card) {
     if (!newTranslation) {
-      alert('翻译内容不能为空');
+      await this.alert('翻译内容不能为空');
       return;
     }
     

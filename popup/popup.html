@@ -30,5 +30,22 @@
   
   <script src="../config.js"></script>
   <script src="popup.js"></script>
+  
+  <!-- 自定义对话框 -->
+  <div id="customDialog" class="custom-dialog">
+    <div class="dialog-content">
+      <div class="dialog-header">
+        <h3 id="dialogTitle">提示</h3>
+        <button class="dialog-close">&times;</button>
+      </div>
+      <div class="dialog-body" id="dialogBody">
+        <!-- 对话框内容将通过JS动态设置 -->
+      </div>
+      <div class="dialog-footer" id="dialogFooter">
+        <!-- 按钮将通过JS动态添加 -->
+      </div>
+    </div>
+  </div>
+  <div id="dialogOverlay" class="dialog-overlay"></div>
 </body>
 </html>
