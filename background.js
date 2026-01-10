@@ -100,6 +100,11 @@ class ExtensionBackground {
           this.updateTranslation(request.word, request.translation)
             .then(() => sendResponse({success: true}));
           return true;
+          
+        case 'update_phonetic':
+          this.updatePhonetic(request.word, request.phonetic)
+            .then(() => sendResponse({success: true}));
+          return true;
             
         case 'update_review_count':
           this.updateReviewCount(request.word)
@@ -155,13 +160,11 @@ class ExtensionBackground {
       const result = await response.json();
       const translation = result?.text || `${word}的翻译`;
       
-      // 保存到字典并获取音标
+      // 只保存到字典，不获取音标
       await this.saveWord(word, translation);
       
-      const phonetics = await this.getPhonetics(word);
       sendResponse({
-        translation,
-        phonetics
+        translation
       });
     } catch (error) {
       console.error('翻译失败:', error);
@@ -175,12 +178,11 @@ class ExtensionBackground {
   async saveWord(word, translation) {
     const dict = await this.getDictionary();
     if (!dict[word]) {
-      // 先创建基本词条
-      const phoneticsData = await this.getPhonetics(word);
+      // 先创建基本词条，不自动获取音标
       const now = Date.now();
       dict[word] = {
         translation,
-        phonetics: phoneticsData.phoneticText, // 只存储音标文本
+        phonetics: '', // 初始化为空字符串，后续手动获取
         added: now,
         reviewed: 0,
         lastModified: now // 新增：最后修改时间
@@ -230,11 +232,20 @@ class ExtensionBackground {
     await chrome.storage.local.set({[this.storageKeys.marks]: marks});
   }
 
-  async updateTranslation(word, newTranslation) {
+  async updateTranslation(word, translation) {
     const dict = await this.getDictionary();
     if (dict[word]) {
-      dict[word].translation = newTranslation;
-      dict[word].lastModified = Date.now(); // 新增：更新最后修改时间
+      dict[word].translation = translation;
+      dict[word].lastModified = Date.now();
+      await chrome.storage.local.set({[this.storageKeys.words]: dict});
+    }
+  }
+  
+  async updatePhonetic(word, phonetic) {
+    const dict = await this.getDictionary();
+    if (dict[word]) {
+      dict[word].phonetics = phonetic;
+      dict[word].lastModified = Date.now();
       await chrome.storage.local.set({[this.storageKeys.words]: dict});
     }
   }
@@ -275,20 +286,6 @@ class ExtensionBackground {
         audioUrl: ''
       };
     }
-  }
-
-  async batchGetPhonetics(words) {
-    return Promise.all(words.map(word => this.getPhonetics(word)));
-  }
-
-  async batchUpdatePhonetics(updates) {
-    const dict = await this.getDictionary();
-    updates.forEach(({word, phonetics}) => {
-      if (dict[word]) {
-        dict[word].phonetics = phonetics;
-      }
-    });
-    await chrome.storage.local.set({[this.storageKeys.words]: dict});
   }
 }
 

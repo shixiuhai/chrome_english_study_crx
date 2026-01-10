@@ -69,30 +69,39 @@ class WordMarker {
 
   // 检查当前域名是否被排除
   async checkDomain() {
-    return new Promise(resolve => {
-      chrome.storage.local.get([window.CONFIG?.STORAGE_KEYS?.EXCLUDED_DOMAINS || 'excluded_domains'], (result) => {
-        const excludedDomains = result[window.CONFIG?.STORAGE_KEYS?.EXCLUDED_DOMAINS || 'excluded_domains'] || [];
-        const currentHostname = window.location.hostname;
-        
-        // 检查当前域名是否在排除列表中
-        const isExcluded = excludedDomains.some(domain => {
-          // 支持子域名排除 (如 *.example.com)
-          if (domain.startsWith('*.')) {
-            const baseDomain = domain.slice(2);
-            return currentHostname === baseDomain || currentHostname.endsWith(`.${baseDomain}`);
-          }
-          // 精确匹配
-          return currentHostname === domain;
-        });
-        
-        if (isExcluded) {
-          console.log('当前域名已被排除，插件功能已禁用');
-          resolve(false);
-        } else {
-          resolve(true);
+    try {
+      // 使用Promise版本的Chrome API，更好地处理错误
+      const result = await chrome.storage.local.get([window.CONFIG?.STORAGE_KEYS?.EXCLUDED_DOMAINS || 'excluded_domains']);
+      const excludedDomains = result[window.CONFIG?.STORAGE_KEYS?.EXCLUDED_DOMAINS || 'excluded_domains'] || [];
+      const currentHostname = window.location.hostname;
+      
+      // 检查当前域名是否在排除列表中
+      const isExcluded = excludedDomains.some(domain => {
+        // 支持子域名排除 (如 *.example.com)
+        if (domain.startsWith('*.')) {
+          const baseDomain = domain.slice(2);
+          return currentHostname === baseDomain || currentHostname.endsWith(`.${baseDomain}`);
         }
+        // 精确匹配
+        return currentHostname === domain;
       });
-    });
+      
+      if (isExcluded) {
+        console.log('当前域名已被排除，插件功能已禁用');
+        return false;
+      } else {
+        return true;
+      }
+    } catch (error) {
+      // 处理扩展上下文被销毁的错误
+      if (error.message.includes('Extension context invalidated')) {
+        console.log('扩展上下文已销毁，跳过域名检查');
+        return false;
+      }
+      // 其他错误
+      console.error('检查域名时出错:', error);
+      return true; // 默认允许，避免因错误导致功能失效
+    }
   }
 
   // 新增方法：检测URL
@@ -333,12 +342,26 @@ class WordMarker {
 
   // 新增：获取所有标记
   async getMarks() {
-    return new Promise(resolve => {
-      chrome.runtime.sendMessage(
-        {type: 'get_marks'},
-        (response) => resolve(response.marks)
-      );
-    });
+    try {
+      return await new Promise((resolve, reject) => {
+        chrome.runtime.sendMessage(
+          {type: 'get_marks'},
+          (response) => {
+            if (chrome.runtime.lastError) {
+              return reject(chrome.runtime.lastError);
+            }
+            resolve(response.marks);
+          }
+        );
+      });
+    } catch (error) {
+      if (error.message.includes('Extension context invalidated')) {
+        console.log('扩展上下文已销毁，跳过获取标记');
+        return {};
+      }
+      console.error('获取标记时出错:', error);
+      return {};
+    }
   }
 
   isAlreadyMarked(text) {
@@ -352,43 +375,65 @@ class WordMarker {
     const markData = this.markedWords.get(markId);
     if (!markData) return;
 
-    await new Promise(resolve => {
-      chrome.runtime.sendMessage({
-        type: 'delete_word',
-        word: markData.text
-      }, () => {
-        if (chrome.runtime.lastError) {
-          console.error('删除单词失败:', chrome.runtime.lastError);
-        }
-        resolve();
-      });
-    });
-    
-    this.markedWords.delete(markId);
-    
-    chrome.runtime.sendMessage({
-      type: 'remove_mark',
-      markId
-    });
-    
-    const markElement = document.querySelector(`[data-mark-id="${markId}"]`);
-    if (markElement) {
-      // 直接恢复文本，不需要处理空格，因为我们在选区时已经排除了空格
-      const newTextNode = document.createTextNode(markData.text);
-      markElement.replaceWith(newTextNode);
-      
-      // 添加轻微动画效果
-      if (newTextNode && newTextNode.style) {
-        newTextNode.style.opacity = '0';
-        newTextNode.style.transition = 'opacity 0.3s';
-        const animate = () => {
-          if (newTextNode && newTextNode.style) {
-            newTextNode.style.opacity = '1';
+    try {
+      await new Promise((resolve, reject) => {
+        chrome.runtime.sendMessage({
+          type: 'delete_word',
+          word: markData.text
+        }, () => {
+          if (chrome.runtime.lastError) {
+            return reject(chrome.runtime.lastError);
           }
-        };
-        requestAnimationFrame(() => {
-          requestAnimationFrame(animate);
+          resolve();
         });
+      });
+      
+      this.markedWords.delete(markId);
+      
+      // 使用try-catch包装第二个API调用
+      try {
+        chrome.runtime.sendMessage({
+          type: 'remove_mark',
+          markId
+        });
+      } catch (error) {
+        if (!error.message.includes('Extension context invalidated')) {
+          console.error('移除标记时出错:', error);
+        }
+      }
+      
+      const markElement = document.querySelector(`[data-mark-id="${markId}"]`);
+      if (markElement) {
+        // 直接恢复文本，不需要处理空格，因为我们在选区时已经排除了空格
+        const newTextNode = document.createTextNode(markData.text);
+        markElement.replaceWith(newTextNode);
+        
+        // 添加轻微动画效果
+        if (newTextNode && newTextNode.style) {
+          newTextNode.style.opacity = '0';
+          newTextNode.style.transition = 'opacity 0.3s';
+          const animate = () => {
+            if (newTextNode && newTextNode.style) {
+              newTextNode.style.opacity = '1';
+            }
+          };
+          requestAnimationFrame(() => {
+            requestAnimationFrame(animate);
+          });
+        }
+      }
+    } catch (error) {
+      if (error.message.includes('Extension context invalidated')) {
+        console.log('扩展上下文已销毁，跳过删除标记');
+        // 仍然尝试清理DOM，因为这是在页面上下文而不是扩展上下文
+        const markElement = document.querySelector(`[data-mark-id="${markId}"]`);
+        if (markElement) {
+          const newTextNode = document.createTextNode(markData.text);
+          markElement.replaceWith(newTextNode);
+        }
+        this.markedWords.delete(markId);
+      } else {
+        console.error('删除标记时出错:', error);
       }
     }
   }
@@ -657,19 +702,39 @@ class WordMarker {
   }
 
   async getTranslation(text) {
-    return new Promise(resolve => {
-      chrome.runtime.sendMessage(
-        {type: 'translate', word: text},
-        (response) => resolve(response.translation)
-      );
-    });
+    try {
+      return await new Promise((resolve, reject) => {
+        chrome.runtime.sendMessage(
+          {type: 'translate', word: text},
+          (response) => {
+            if (chrome.runtime.lastError) {
+              return reject(chrome.runtime.lastError);
+            }
+            resolve(response.translation);
+          }
+        );
+      });
+    } catch (error) {
+      if (error.message.includes('Extension context invalidated')) {
+        console.log('扩展上下文已销毁，返回默认翻译');
+        return `${text}的翻译`;
+      }
+      console.error('获取翻译时出错:', error);
+      return `${text}的翻译`;
+    }
   }
 
   async saveMark(markData) {
-    chrome.runtime.sendMessage({
-      type: 'save_mark',
-      markData
-    });
+    try {
+      chrome.runtime.sendMessage({
+        type: 'save_mark',
+        markData
+      });
+    } catch (error) {
+      if (!error.message.includes('Extension context invalidated')) {
+        console.error('保存标记时出错:', error);
+      }
+    }
   }
 }
 
