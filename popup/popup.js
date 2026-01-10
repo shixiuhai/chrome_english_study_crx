@@ -4,9 +4,11 @@ class WordBook {
     this.searchInput = document.querySelector('.search-box input');
     this.words = [];
     this.userId = '';
+    this.currentDomain = '';
     
     this.init();
     this.initDialog();
+    this.initDomainExclusion();
   }
 
   // 初始化对话框
@@ -611,6 +613,139 @@ class WordBook {
     
     // 删除单词
     this.wordListElement.addEventListener('click', this.handleWordActions.bind(this));
+  }
+
+  // 初始化域名排除功能
+  async initDomainExclusion() {
+    // 获取当前标签页的域名
+    this.currentDomain = await this.getCurrentTabDomain();
+    document.getElementById('currentDomain').textContent = this.currentDomain;
+    
+    // 加载已排除的域名列表
+    await this.loadExcludedDomains();
+    
+    // 添加事件监听
+    this.setupDomainExclusionEventListeners();
+  }
+
+  // 获取当前标签页的域名
+  async getCurrentTabDomain() {
+    return new Promise((resolve) => {
+      chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
+        if (tabs[0] && tabs[0].url) {
+          try {
+            const url = new URL(tabs[0].url);
+            resolve(url.hostname);
+          } catch (error) {
+            resolve('');
+          }
+        } else {
+          resolve('');
+        }
+      });
+    });
+  }
+
+  // 加载已排除的域名列表
+  async loadExcludedDomains() {
+    const excludedDomains = await this.getExcludedDomains();
+    this.renderExcludedDomains(excludedDomains);
+  }
+
+  // 获取已排除的域名列表
+  async getExcludedDomains() {
+    return new Promise((resolve) => {
+      chrome.storage.local.get([CONFIG.STORAGE_KEYS.EXCLUDED_DOMAINS], (result) => {
+        resolve(result[CONFIG.STORAGE_KEYS.EXCLUDED_DOMAINS] || []);
+      });
+    });
+  }
+
+  // 渲染已排除的域名列表
+  renderExcludedDomains(excludedDomains) {
+    const container = document.getElementById('excludedDomainsList');
+    container.innerHTML = '';
+    
+    if (excludedDomains.length === 0) {
+      container.innerHTML = '<div style="font-size: 11px; color: var(--text-light); padding: 4px;">暂无排除域名</div>';
+      return;
+    }
+    
+    excludedDomains.forEach(domain => {
+      const domainTag = document.createElement('div');
+      domainTag.className = 'domain-tag';
+      domainTag.innerHTML = `
+        <span>${domain}</span>
+        <button class="remove-domain-btn" data-domain="${domain}">&times;</button>
+      `;
+      container.appendChild(domainTag);
+    });
+  }
+
+  // 添加域名排除事件监听
+  setupDomainExclusionEventListeners() {
+    // 排除当前域名按钮
+    document.getElementById('excludeDomainBtn').addEventListener('click', () => {
+      this.excludeCurrentDomain();
+    });
+    
+    // 移除已排除域名按钮（使用事件委托）
+    document.getElementById('excludedDomainsList').addEventListener('click', (e) => {
+      if (e.target.classList.contains('remove-domain-btn')) {
+        const domain = e.target.dataset.domain;
+        this.removeExcludedDomain(domain);
+      }
+    });
+  }
+
+  // 排除当前域名
+  async excludeCurrentDomain() {
+    if (!this.currentDomain) {
+      await this.alert('无法获取当前域名');
+      return;
+    }
+    
+    const excludedDomains = await this.getExcludedDomains();
+    
+    if (excludedDomains.includes(this.currentDomain)) {
+      await this.alert('当前域名已在排除列表中');
+      return;
+    }
+    
+    // 显示确认对话框
+    const confirmed = await this.confirm(
+      `确定要排除当前域名 "${this.currentDomain}" 吗？排除后插件将不再在此域名上运行。`,
+      '排除域名确认'
+    );
+    
+    if (!confirmed) return;
+    
+    // 添加到排除列表
+    const updatedDomains = [...excludedDomains, this.currentDomain];
+    await this.saveExcludedDomains(updatedDomains);
+    
+    // 更新UI
+    this.renderExcludedDomains(updatedDomains);
+    await this.alert(`已成功排除域名 "${this.currentDomain}"`);
+  }
+
+  // 移除已排除的域名
+  async removeExcludedDomain(domain) {
+    const excludedDomains = await this.getExcludedDomains();
+    const updatedDomains = excludedDomains.filter(d => d !== domain);
+    
+    await this.saveExcludedDomains(updatedDomains);
+    this.renderExcludedDomains(updatedDomains);
+    await this.alert(`已成功移除排除域名 "${domain}"`);
+  }
+
+  // 保存已排除的域名列表
+  async saveExcludedDomains(domains) {
+    return new Promise((resolve) => {
+      chrome.storage.local.set({ [CONFIG.STORAGE_KEYS.EXCLUDED_DOMAINS]: domains }, () => {
+        resolve();
+      });
+    });
   }
 
   handleSearch() {

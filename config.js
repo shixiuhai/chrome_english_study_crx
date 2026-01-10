@@ -27,7 +27,8 @@ const CONFIG = {
   // 存储键名
   STORAGE_KEYS: {
     DICTIONARY: 'word_dictionary',
-    MARKS: 'word_marks'
+    MARKS: 'word_marks',
+    EXCLUDED_DOMAINS: 'excluded_domains'
   },
   
   // TTS配置

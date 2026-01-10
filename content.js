@@ -60,7 +60,39 @@ class WordMarker {
     this.currentTranslations = 0;
     this.maxTranslations = 5; // 最大同时翻译数量
     this.init();
-    this.initPageMarks(); // 新增初始化调用
+    this.checkDomain().then(isAllowed => {
+      if (isAllowed) {
+        this.initPageMarks(); // 新增初始化调用
+      }
+    });
+  }
+
+  // 检查当前域名是否被排除
+  async checkDomain() {
+    return new Promise(resolve => {
+      chrome.storage.local.get([window.CONFIG?.STORAGE_KEYS?.EXCLUDED_DOMAINS || 'excluded_domains'], (result) => {
+        const excludedDomains = result[window.CONFIG?.STORAGE_KEYS?.EXCLUDED_DOMAINS || 'excluded_domains'] || [];
+        const currentHostname = window.location.hostname;
+        
+        // 检查当前域名是否在排除列表中
+        const isExcluded = excludedDomains.some(domain => {
+          // 支持子域名排除 (如 *.example.com)
+          if (domain.startsWith('*.')) {
+            const baseDomain = domain.slice(2);
+            return currentHostname === baseDomain || currentHostname.endsWith(`.${baseDomain}`);
+          }
+          // 精确匹配
+          return currentHostname === domain;
+        });
+        
+        if (isExcluded) {
+          console.log('当前域名已被排除，插件功能已禁用');
+          resolve(false);
+        } else {
+          resolve(true);
+        }
+      });
+    });
   }
 
   // 新增方法：检测URL
@@ -364,6 +396,12 @@ class WordMarker {
 
 
   async markWord(selection, text) {
+    // 检查当前域名是否被排除
+    const isAllowed = await this.checkDomain();
+    if (!isAllowed) {
+      return;
+    }
+    
     // 1. 先获取选区范围
     const range = selection.getRangeAt(0);
     

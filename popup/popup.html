@@ -24,6 +24,18 @@
         <button id="uploadBtn">⬆️ 同步</button>
         <button id="deleteBtn">🗑️ 删除</button>
       </div>
+      <!-- 域名排除功能 -->
+      <div class="domain-exclusion">
+        <div class="current-domain">
+          <span>当前域名：</span>
+          <span id="currentDomain"></span>
+          <button id="excludeDomainBtn">排除当前域名</button>
+        </div>
+        <div class="excluded-domains">
+          <h3>已排除域名</h3>
+          <div id="excludedDomainsList" class="excluded-list"></div>
+        </div>
+      </div>
     </div>
     
     <div class="word-list" id="wordList">
