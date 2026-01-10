@@ -133,6 +133,11 @@ class ExtensionBackground {
             .then(() => sendResponse({success: true}));
           return true;
           
+        case 'remove_all_marks_for_word':
+          this.removeAllMarksForWord(request.word)
+            .then(() => sendResponse({success: true}));
+          return true;
+          
         case 'get_phonetics':
           this.getPhonetics(request.word)
             .then(phonetics => sendResponse({phonetics}));
@@ -242,6 +247,17 @@ class ExtensionBackground {
   async removeMark(markId) {
     const marks = await this.getMarks();
     delete marks[markId];
+    await chrome.storage.local.set({[this.storageKeys.marks]: marks});
+  }
+  
+  async removeAllMarksForWord(word) {
+    const marks = await this.getMarks();
+    // 移除所有匹配该单词的标记
+    for (const [id, mark] of Object.entries(marks)) {
+      if (mark.text === word) {
+        delete marks[id];
+      }
+    }
     await chrome.storage.local.set({[this.storageKeys.marks]: marks});
   }
 

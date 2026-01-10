@@ -170,8 +170,16 @@ class WordBook {
   // 保存用户ID
   async saveUserId() {
     const userId = document.getElementById('userIdInput').value.trim();
+    
+    // 验证用户ID必须是11位
     if (!userId) {
       await this.alert('请输入有效的用户ID');
+      return;
+    }
+    
+    // 验证用户ID必须是11位数字
+    if (userId.length !== 11 || !/^\d+$/.test(userId)) {
+      await this.alert('用户ID必须为11位数字，建议使用手机号');
       return;
     }
     

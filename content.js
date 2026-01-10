@@ -395,15 +395,13 @@ class WordMarker {
     return false;
   }
 
-  async removeMark(markId) {
-    const markData = this.markedWords.get(markId);
-    if (!markData) return;
-
+  // 移除单词本中的单词
+  async removeWordFromDictionary(word) {
     try {
       await new Promise((resolve, reject) => {
         chrome.runtime.sendMessage({
           type: 'delete_word',
-          word: markData.text
+          word
         }, () => {
           if (chrome.runtime.lastError) {
             return reject(chrome.runtime.lastError);
@@ -411,53 +409,127 @@ class WordMarker {
           resolve();
         });
       });
+    } catch (error) {
+      console.error('从单词本删除单词失败:', error);
+      throw error;
+    }
+  }
+  
+  // 移除所有相同单词的标记
+  async removeAllMarksForWord(word) {
+    try {
+      // 1. 从单词本中删除该单词
+      await this.removeWordFromDictionary(word);
       
-      this.markedWords.delete(markId);
+      // 2. 收集所有需要删除的标记ID
+      const markIdsToRemove = [];
+      for (const [id, data] of this.markedWords.entries()) {
+        if (data.text === word) {
+          markIdsToRemove.push(id);
+        }
+      }
       
-      // 使用try-catch包装第二个API调用
+      // 3. 从Map中删除所有相关标记
+      markIdsToRemove.forEach(id => {
+        this.markedWords.delete(id);
+      });
+      
+      // 4. 从DOM中移除所有相关标记
+      markIdsToRemove.forEach(id => {
+        const markElement = document.querySelector(`[data-mark-id="${id}"]`);
+        if (markElement) {
+          // 直接恢复文本
+          const newTextNode = document.createTextNode(word);
+          markElement.replaceWith(newTextNode);
+          
+          // 添加轻微动画效果
+          if (newTextNode && newTextNode.style) {
+            newTextNode.style.opacity = '0';
+            newTextNode.style.transition = 'opacity 0.3s';
+            const animate = () => {
+              if (newTextNode && newTextNode.style) {
+                newTextNode.style.opacity = '1';
+              }
+            };
+            requestAnimationFrame(() => {
+              requestAnimationFrame(animate);
+            });
+          }
+        }
+      });
+      
+      // 5. 通知background移除所有相关标记
       try {
         chrome.runtime.sendMessage({
-          type: 'remove_mark',
-          markId
+          type: 'remove_all_marks_for_word',
+          word
         });
       } catch (error) {
         if (!error.message.includes('Extension context invalidated')) {
-          console.error('移除标记时出错:', error);
+          console.error('移除所有标记通知失败:', error);
         }
       }
       
-      const markElement = document.querySelector(`[data-mark-id="${markId}"]`);
-      if (markElement) {
-        // 直接恢复文本，不需要处理空格，因为我们在选区时已经排除了空格
-        const newTextNode = document.createTextNode(markData.text);
-        markElement.replaceWith(newTextNode);
-        
-        // 添加轻微动画效果
-        if (newTextNode && newTextNode.style) {
-          newTextNode.style.opacity = '0';
-          newTextNode.style.transition = 'opacity 0.3s';
-          const animate = () => {
-            if (newTextNode && newTextNode.style) {
-              newTextNode.style.opacity = '1';
-            }
-          };
-          requestAnimationFrame(() => {
-            requestAnimationFrame(animate);
-          });
-        }
-      }
     } catch (error) {
+      console.error('移除所有标记失败:', error);
+      // 扩展上下文被销毁时的处理
       if (error.message.includes('Extension context invalidated')) {
         console.log('扩展上下文已销毁，跳过删除标记');
-        // 仍然尝试清理DOM，因为这是在页面上下文而不是扩展上下文
-        const markElement = document.querySelector(`[data-mark-id="${markId}"]`);
-        if (markElement) {
-          const newTextNode = document.createTextNode(markData.text);
-          markElement.replaceWith(newTextNode);
+        // 仍然尝试清理DOM
+        const wordToRemove = word;
+        // 收集所有需要删除的标记ID
+        const markIdsToRemove = [];
+        for (const [id, data] of this.markedWords.entries()) {
+          if (data.text === wordToRemove) {
+            markIdsToRemove.push(id);
+          }
         }
-        this.markedWords.delete(markId);
-      } else {
-        console.error('删除标记时出错:', error);
+        
+        // 从DOM中移除所有相关标记
+        markIdsToRemove.forEach(id => {
+          const markElement = document.querySelector(`[data-mark-id="${id}"]`);
+          if (markElement) {
+            const newTextNode = document.createTextNode(wordToRemove);
+            markElement.replaceWith(newTextNode);
+          }
+          // 从Map中删除
+          this.markedWords.delete(id);
+        });
+      }
+    }
+  }
+  
+  async removeMark(markId) {
+    const markData = this.markedWords.get(markId);
+    if (!markData) return;
+
+    try {
+      // 移除所有相同单词的标记
+      await this.removeAllMarksForWord(markData.text);
+    } catch (error) {
+      console.error('删除标记时出错:', error);
+      // 扩展上下文被销毁时的处理
+      if (error.message.includes('Extension context invalidated')) {
+        console.log('扩展上下文已销毁，跳过删除标记');
+        // 仍然尝试清理DOM和Map
+        const wordToRemove = markData.text;
+        const markIdsToRemove = [];
+        for (const [id, data] of this.markedWords.entries()) {
+          if (data.text === wordToRemove) {
+            markIdsToRemove.push(id);
+          }
+        }
+        
+        // 从DOM中移除所有相关标记
+        markIdsToRemove.forEach(id => {
+          const markElement = document.querySelector(`[data-mark-id="${id}"]`);
+          if (markElement) {
+            const newTextNode = document.createTextNode(wordToRemove);
+            markElement.replaceWith(newTextNode);
+          }
+          // 从Map中删除
+          this.markedWords.delete(id);
+        });
       }
     }
   }
