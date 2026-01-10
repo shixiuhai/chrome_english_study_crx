@@ -1,7 +1,8 @@
 // API配置文件
-const CONFIG = {
+// 配置对象
+const configData = {
   // API基础URL
-  API_BASE_URL: 'http://chrome.yizhiweb.top:8080',
+  API_BASE_URL: 'https://chrome.yizhiweb.top',
   
   // API端点
   ENDPOINTS: {
@@ -38,7 +39,12 @@ const CONFIG = {
 
 // 导出配置对象
 if (typeof module !== 'undefined' && module.exports) {
-  module.exports = CONFIG;
+  // Node.js环境
+  module.exports = configData;
 } else if (typeof window !== 'undefined') {
-  window.CONFIG = CONFIG;
+  // 浏览器环境（content script等）
+  window.CONFIG = configData;
+} else {
+  // Service Worker环境
+  self.CONFIG = configData;
 }

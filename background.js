@@ -1,20 +1,22 @@
 // Chrome插件后台脚本 - 单词学习助手
 
-// 配置对象（直接定义，因为service worker没有window对象）
-const CONFIG = {
+// 使用importScripts导入config.js，共享配置
+importScripts('config.js');
+
+// 获取配置对象，确保CONFIG可用
+// 添加默认值作为安全保障，防止config.js加载失败或配置不完整
+const CONFIG = self.CONFIG || {
   // API基础URL
-  API_BASE_URL: 'http://chrome.yizhiweb.top:8080',
+  API_BASE_URL: 'https://chrome.yizhiweb.top',
   
   // API端点
   ENDPOINTS: {
     TRANSLATE: '/wx/chrome/crx/translate',
-    PHONETICS: '/wx/chrome/crx/phonetics'
+    PHONETICS: '/wx/chrome/crx/phonetics',
+    SYNC_UPLOAD: '/wx/chrome/crx/sync/upload',
+    SYNC_DOWNLOAD: '/wx/chrome/crx/sync/download',
+    SYNC_DELETE: '/wx/chrome/crx/sync/delete'
   },
-  
-  // 单词数量限制
-  WORD_COUNT_LIMIT: 50, // 单次选中单词数量限制
-  MAX_MARKED_WORDS: 1000, // 最大标记单词数量
-  MAX_TEXT_NODES: 2000, // 最大处理文本节点数量
   
   // 存储键名
   STORAGE_KEYS: {
@@ -23,6 +25,11 @@ const CONFIG = {
     EXCLUDED_DOMAINS: 'excluded_domains'
   }
 };
+
+// 清除self对象上的CONFIG，避免内存泄漏
+if (self.CONFIG) {
+  delete self.CONFIG;
+}
 
 // 通用API请求函数，支持自动重试
 async function fetchWithRetry(url, options = {}, retryCount = 1) {
@@ -155,7 +162,7 @@ class ExtensionBackground {
 
   async handleTranslation(word, sendResponse) {
     try {
-      const apiUrl = `${CONFIG.API_BASE_URL || 'http://chrome.yizhiweb.top:8080'}${CONFIG.ENDPOINTS.TRANSLATE || '/wx/chrome/crx/translate'}`;
+      const apiUrl = `${CONFIG.API_BASE_URL}${CONFIG.ENDPOINTS.TRANSLATE}`;
       const response = await fetchWithRetry(`${apiUrl}?word=${encodeURIComponent(word)}`);
       const result = await response.json();
       const translation = result?.text || `${word}的翻译`;
@@ -270,7 +277,7 @@ class ExtensionBackground {
         };
       }
       
-      const apiUrl = `${CONFIG.API_BASE_URL || 'http://chrome.yizhiweb.top:8080'}${CONFIG.ENDPOINTS.PHONETICS || '/wx/chrome/crx/phonetics'}`;
+      const apiUrl = `${CONFIG.API_BASE_URL}${CONFIG.ENDPOINTS.PHONETICS}`;
       const response = await fetchWithRetry(`${apiUrl}?word=${encodeURIComponent(word)}`);
       const data = await response.json();
       
