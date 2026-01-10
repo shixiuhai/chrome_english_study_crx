@@ -52,8 +52,8 @@ async function fetchWithRetry(url, options = {}, retryCount = 1) {
     clearTimeout(id);
     
     if (!response.ok) {
-      if (retryCount > 0 && response.status >= 500) {
-        // 服务器错误，重试1次
+      if (retryCount > 0 && (response.status >= 500 || response.status === 521)) {
+        // 服务器错误或Cloudflare 521错误，重试1次
         console.log(`API请求失败(${response.status})，重试中...`);
         return fetchWithRetry(url, options, retryCount - 1);
       }
@@ -279,6 +279,16 @@ class ExtensionBackground {
       
       const apiUrl = `${CONFIG.API_BASE_URL}${CONFIG.ENDPOINTS.PHONETICS}`;
       const response = await fetchWithRetry(`${apiUrl}?word=${encodeURIComponent(word)}`);
+      
+      // 检查响应状态，只处理成功的响应
+      if (!response.ok) {
+        console.error('获取音标失败: API请求失败:', response.status);
+        return {
+          phoneticText: '',
+          audioUrl: ''
+        };
+      }
+      
       const data = await response.json();
       
       return {
