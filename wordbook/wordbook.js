@@ -278,12 +278,15 @@ class WordBook {
       
       wordCard.innerHTML = `
         <div class="word-section">
-          <div class="word-container">
-            <span class="word-text">${wordData.word}</span>
-            ${wordData.phonetics ? `<span class="word-phonetics">/${wordData.phonetics}/</span>` : ''}
-            <div class="tooltip word-tooltip">
-              <div class="tooltip-word">${wordData.word}</div>
-              ${wordData.phonetics ? `<div class="tooltip-phonetics">/${wordData.phonetics}/</div>` : ''}
+          <div class="word-card-header">
+            <input type="checkbox" class="word-select-checkbox" data-word="${wordData.word}">
+            <div class="word-container">
+              <span class="word-text">${wordData.word}</span>
+              ${wordData.phonetics ? `<span class="word-phonetics">/${wordData.phonetics}/</span>` : ''}
+              <div class="tooltip word-tooltip">
+                <div class="tooltip-word">${wordData.word}</div>
+                ${wordData.phonetics ? `<div class="tooltip-phonetics">/${wordData.phonetics}/</div>` : ''}
+              </div>
             </div>
           </div>
           <div class="translation-container">
@@ -309,6 +312,9 @@ class WordBook {
       // 添加tooltip事件
       this.setupTooltipEvents(wordCard);
     });
+    
+    // 设置批量操作事件监听
+    this.setupBatchActionListeners();
   }
   
   // 设置tooltip事件
@@ -348,6 +354,165 @@ class WordBook {
     
     // 删除单词
     this.wordListElement.addEventListener('click', this.handleWordActions.bind(this));
+  }
+  
+  // 设置批量操作事件监听
+  setupBatchActionListeners() {
+    // 全选/取消全选
+    const selectAllCheckbox = document.getElementById('selectAllCheckbox');
+    if (selectAllCheckbox) {
+      // 移除旧的事件监听器，避免重复绑定
+      selectAllCheckbox.removeEventListener('change', this.handleSelectAllChange);
+      this.handleSelectAllChange = (e) => {
+        const isChecked = e.target.checked;
+        this.toggleSelectAll(isChecked);
+      };
+      selectAllCheckbox.addEventListener('change', this.handleSelectAllChange);
+    }
+    
+    // 单个复选框事件 - 使用事件委托，确保动态生成的元素也能触发事件
+    this.wordListElement.removeEventListener('change', this.handleCheckboxChange);
+    this.handleCheckboxChange = (e) => {
+      if (e.target.classList.contains('word-select-checkbox')) {
+        this.updateBatchDeleteButton();
+        this.updateSelectAllStatus();
+      }
+    };
+    this.wordListElement.addEventListener('change', this.handleCheckboxChange);
+    
+    // 批量删除按钮
+    const batchDeleteBtn = document.getElementById('batchDeleteBtn');
+    if (batchDeleteBtn) {
+      // 移除旧的事件监听器，避免重复绑定
+      batchDeleteBtn.removeEventListener('click', this.handleBatchDelete);
+      batchDeleteBtn.addEventListener('click', () => {
+        this.handleBatchDelete();
+      });
+    }
+  }
+  
+  // 全选/取消全选 - 只处理可见的单词卡片
+  toggleSelectAll(isChecked) {
+    const wordCards = document.querySelectorAll('.word-card');
+    wordCards.forEach(card => {
+      // 只处理可见的卡片
+      if (card.style.display !== 'none') {
+        const checkbox = card.querySelector('.word-select-checkbox');
+        if (checkbox) {
+          checkbox.checked = isChecked;
+        }
+      }
+    });
+    this.updateBatchDeleteButton();
+    this.updateSelectAllStatus();
+  }
+  
+  // 更新批量删除按钮状态
+  updateBatchDeleteButton() {
+    const batchDeleteBtn = document.getElementById('batchDeleteBtn');
+    const selectedCount = this.getSelectedWords().length;
+    batchDeleteBtn.disabled = selectedCount === 0;
+    batchDeleteBtn.textContent = `🗑️ 批量删除 (${selectedCount})`;
+  }
+  
+  // 更新全选状态 - 只考虑可见的单词卡片
+  updateSelectAllStatus() {
+    const selectAllCheckbox = document.getElementById('selectAllCheckbox');
+    const wordCards = document.querySelectorAll('.word-card');
+    
+    // 只获取可见的单词卡片
+    const visibleCards = Array.from(wordCards).filter(card => card.style.display !== 'none');
+    if (visibleCards.length === 0) {
+      selectAllCheckbox.checked = false;
+      selectAllCheckbox.indeterminate = false;
+      return;
+    }
+    
+    const allChecked = visibleCards.every(card => {
+      const checkbox = card.querySelector('.word-select-checkbox');
+      return checkbox && checkbox.checked;
+    });
+    const noneChecked = visibleCards.every(card => {
+      const checkbox = card.querySelector('.word-select-checkbox');
+      return !checkbox || !checkbox.checked;
+    });
+    
+    selectAllCheckbox.checked = allChecked;
+    selectAllCheckbox.indeterminate = !allChecked && !noneChecked;
+  }
+  
+  // 获取选中的单词 - 只返回可见卡片中选中的单词
+  getSelectedWords() {
+    const wordCards = document.querySelectorAll('.word-card');
+    const selectedWords = [];
+    
+    wordCards.forEach(card => {
+      // 只处理可见的卡片
+      if (card.style.display !== 'none') {
+        const checkbox = card.querySelector('.word-select-checkbox');
+        if (checkbox && checkbox.checked) {
+          selectedWords.push(checkbox.dataset.word);
+        }
+      }
+    });
+    
+    return selectedWords;
+  }
+  
+  // 批量删除处理
+  async handleBatchDelete() {
+    console.log('批量删除处理开始');
+    const selectedWords = this.getSelectedWords();
+    console.log('选中的单词:', selectedWords);
+    
+    if (selectedWords.length === 0) {
+      console.log('没有选中的单词，退出批量删除');
+      return;
+    }
+    
+    console.log('显示确认对话框');
+    if (!(await this.confirm(`确定要删除选中的 ${selectedWords.length} 个单词吗？`))) {
+      console.log('用户取消了批量删除');
+      return;
+    }
+    
+    try {
+      console.log('开始批量删除单词');
+      
+      // 使用新的批量删除API，避免竞态条件
+      console.log('发送批量删除请求:', selectedWords);
+      await new Promise((resolve, reject) => {
+        chrome.runtime.sendMessage(
+          {type: 'delete_words', words: selectedWords}, 
+          (response) => {
+            if (chrome.runtime.lastError) {
+              console.error('批量删除失败:', chrome.runtime.lastError);
+              reject(chrome.runtime.lastError);
+            } else {
+              console.log('批量删除成功，响应:', response);
+              resolve();
+            }
+          }
+        );
+      });
+      
+      console.log('批量删除完成，重新加载单词');
+      // 重新加载单词并渲染列表
+      await this.loadWords();
+      console.log('单词加载完成，重新渲染列表');
+      this.renderWordList();
+      
+      // 重置全选状态
+      const selectAllCheckbox = document.getElementById('selectAllCheckbox');
+      selectAllCheckbox.checked = false;
+      selectAllCheckbox.indeterminate = false;
+      
+      console.log(`成功删除 ${selectedWords.length} 个单词`);
+      await this.alert(`成功删除 ${selectedWords.length} 个单词`);
+    } catch (error) {
+      console.error('批量删除出错:', error);
+      this.showError('批量删除单词时出错');
+    }
   }
 
   handleSearch() {

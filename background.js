@@ -106,6 +106,11 @@ class ExtensionBackground {
           this.deleteWord(request.word)
             .then(() => sendResponse({success: true}));
           return true;
+          
+        case 'delete_words':
+          this.deleteWords(request.words)
+            .then(() => sendResponse({success: true}));
+          return true;
             
         case 'update_translation':
           this.updateTranslation(request.word, request.translation)
@@ -308,6 +313,35 @@ class ExtensionBackground {
       }
     }
     await chrome.storage.local.set({[this.storageKeys.marks]: marks});
+  }
+  
+  async deleteWords(words) {
+    console.log('批量删除单词:', words);
+    
+    // 获取当前字典
+    const dict = await this.getDictionary();
+    
+    // 获取当前标记
+    const marks = await this.getMarks();
+    
+    // 删除所有指定单词
+    words.forEach(word => {
+      console.log(`删除单词: ${word}`);
+      delete dict[word];
+      
+      // 同时删除相关标记
+      for (const [id, mark] of Object.entries(marks)) {
+        if (mark.text === word) {
+          delete marks[id];
+        }
+      }
+    });
+    
+    // 保存更新后的字典和标记
+    await chrome.storage.local.set({[this.storageKeys.words]: dict});
+    await chrome.storage.local.set({[this.storageKeys.marks]: marks});
+    
+    console.log('批量删除完成，删除了', words.length, '个单词');
   }
 
   async updateTranslation(word, translation) {
