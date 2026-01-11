@@ -76,6 +76,19 @@
   - `markExistingWord()`: 标记现有单词
   - `getMarks()`: 获取存储的标记
   - 新增`isUrl()`: 检测URL文本
+  - `init()`: 初始化事件监听，包含300ms延迟确认和ESC键取消功能
+  - `markWord()`: 标记单词，支持延迟确认机制
+  - `markOtherOccurrences()`: 优化版标记其他出现，使用requestAnimationFrame避免阻塞主线程
+  - 优化的选区调整逻辑，简化代码结构
+  - 防抖机制，避免频繁操作
+
+### 性能优化
+- 优化了markOtherOccurrences方法，减少处理节点数量和标记数量
+- 使用requestAnimationFrame避免阻塞主线程
+- 防抖机制，避免频繁操作
+- 简化选区调整逻辑，提高执行效率
+- 限制每个单词的最大标记数量为5个
+- 限制处理的文本节点数量为50个
 
 ### background.js 主要功能
 - 数据存储管理(Chrome storage API)

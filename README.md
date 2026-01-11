@@ -120,6 +120,13 @@ graph TD
 1. `manifest.json` - 插件配置
 2. `config.js` - 统一配置管理（API路径、样式配置等）
 3. `content.js` - 网页单词标记逻辑（支持词组和URL检测）
+   - 实现300ms延迟确认机制，避免误操作
+   - 支持ESC键取消标记
+   - 优化的选区调整逻辑，简化代码结构
+   - 使用requestAnimationFrame优化markOtherOccurrences方法，避免阻塞主线程
+   - 添加防抖机制，避免频繁操作
+   - 限制每个单词的最大标记数量为5个
+   - 限制处理的文本节点数量为50个
 4. `background.js` - 核心业务逻辑与存储
 5. `popup/` - 单词本界面
 
