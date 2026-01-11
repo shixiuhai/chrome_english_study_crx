@@ -32,11 +32,11 @@ if (self.CONFIG) {
 }
 
 // 通用API请求函数，支持自动重试
-async function fetchWithRetry(url, options = {}, retryCount = 3) {
+async function fetchWithRetry(url, options = {}, retryCount = CONFIG.REQUEST_CONFIG.MAX_RETRIES) {
   const defaultOptions = {
     method: 'GET',
     redirect: 'follow',
-    timeout: 3000, // 3秒超时
+    timeout: CONFIG.REQUEST_CONFIG.TIMEOUT, // 使用配置中的超时时间
     ...options
   };
 

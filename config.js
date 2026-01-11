@@ -13,6 +13,12 @@ const configData = {
     SYNC_DELETE: '/wx/chrome/crx/sync/delete'
   },
   
+  // API请求配置
+  REQUEST_CONFIG: {
+    TIMEOUT: 2000, // 2秒超时
+    MAX_RETRIES: 3 // 最大重试次数
+  },
+  
   // 单词数量限制
   WORD_COUNT_LIMIT: 99, // 单次选中单词数量限制
   MAX_MARKED_WORDS: 8000, // 最大标记单词数量

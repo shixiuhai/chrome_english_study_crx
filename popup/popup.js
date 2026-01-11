@@ -485,7 +485,9 @@ class WordBookConfig {
     try {
       // 设置超时控制，避免请求卡住
       const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 10000); // 10秒超时
+      // 使用配置文件中的超时时间，默认10秒
+      const timeout = CONFIG?.REQUEST_CONFIG?.TIMEOUT || 10000;
+      const timeoutId = setTimeout(() => controller.abort(), timeout);
       
       const response = await fetch(url, {
         method,
