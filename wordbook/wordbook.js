@@ -272,9 +272,22 @@ class WordBook {
       wordCard.dataset.word = wordData.word;
       
       wordCard.innerHTML = `
-        <span class="word-text">${wordData.word}</span>
-        ${wordData.phonetics ? `<span class="word-phonetics">/${wordData.phonetics}/</span>` : ''}
-        <div class="word-translation">${wordData.translation || '暂无翻译'}</div>
+        <div class="word-section">
+          <div class="word-container">
+            <span class="word-text">${wordData.word}</span>
+            ${wordData.phonetics ? `<span class="word-phonetics">/${wordData.phonetics}/</span>` : ''}
+            <div class="tooltip word-tooltip">
+              <div class="tooltip-word">${wordData.word}</div>
+              ${wordData.phonetics ? `<div class="tooltip-phonetics">/${wordData.phonetics}/</div>` : ''}
+            </div>
+          </div>
+          <div class="translation-container">
+            <div class="word-translation">${wordData.translation || '暂无翻译'}</div>
+            <div class="tooltip translation-tooltip">
+              <div class="tooltip-translation">${wordData.translation || '暂无翻译'}</div>
+            </div>
+          </div>
+        </div>
         <div class="word-actions">
           <button class="speak-btn" title="朗读">🔊</button>
           <button class="edit-btn" title="编辑">✏️</button>
@@ -284,7 +297,41 @@ class WordBook {
       `;
       
       this.wordListElement.appendChild(wordCard);
+      
+      // 添加tooltip事件
+      this.setupTooltipEvents(wordCard);
     });
+  }
+  
+  // 设置tooltip事件
+  setupTooltipEvents(card) {
+    // 原文tooltip
+    const wordContainer = card.querySelector('.word-container');
+    const wordTooltip = card.querySelector('.word-tooltip');
+    
+    if (wordContainer && wordTooltip) {
+      wordContainer.addEventListener('mouseenter', () => {
+        wordTooltip.classList.add('show');
+      });
+      
+      wordContainer.addEventListener('mouseleave', () => {
+        wordTooltip.classList.remove('show');
+      });
+    }
+    
+    // 翻译tooltip
+    const translationContainer = card.querySelector('.translation-container');
+    const translationTooltip = card.querySelector('.translation-tooltip');
+    
+    if (translationContainer && translationTooltip) {
+      translationContainer.addEventListener('mouseenter', () => {
+        translationTooltip.classList.add('show');
+      });
+      
+      translationContainer.addEventListener('mouseleave', () => {
+        translationTooltip.classList.remove('show');
+      });
+    }
   }
 
   setupEventListeners() {
