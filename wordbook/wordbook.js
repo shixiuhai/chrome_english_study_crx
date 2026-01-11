@@ -289,14 +289,14 @@ class WordBook {
             </div>
           </div>
         </div>
+        <div class="word-review-count">
+          <small>复习 ${wordData.reviewed || 0} 次</small>
+        </div>
         <div class="word-actions">
           <button class="speak-btn" title="朗读">🔊</button>
           <button class="edit-btn" title="编辑">✏️</button>
           ${!wordData.word.includes(' ') ? `<button class="phonetic-btn" title="获取音标">🔤</button>` : ''}
           <button class="delete-btn" title="删除">🗑️</button>
-        </div>
-        <div class="word-review-count">
-          <small>复习 ${wordData.reviewed || 0} 次</small>
         </div>
       `;
       
