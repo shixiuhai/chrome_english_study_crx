@@ -36,7 +36,7 @@ async function fetchWithRetry(url, options = {}, retryCount = 3) {
   const defaultOptions = {
     method: 'GET',
     redirect: 'follow',
-    timeout: 8000, // 8秒超时
+    timeout: 3000, // 3秒超时
     ...options
   };
 

@@ -487,10 +487,9 @@ class WordBook {
           },
           () => {
             if (chrome.runtime.lastError) {
-              console.error('更新翻译失败:', chrome.runtime.lastError);
-              this.showError('保存翻译失败');
-              return;
-            }
+                console.error('更新翻译失败:', chrome.runtime.lastError);
+                return;
+              }
             resolve();
           }
         );
@@ -795,8 +794,8 @@ class WordBook {
               }
               
               if (chrome.runtime.lastError) {
-                reject(new Error(chrome.runtime.lastError.message));
-                return;
+                console.error('翻译请求失败:', chrome.runtime.lastError);
+                return resolve('暂无翻译');
               }
               
               resolve(response.translation || '暂无翻译');
@@ -807,7 +806,8 @@ class WordBook {
         if (error.name === 'AbortError' || error.message === 'Request aborted') {
           throw error;
         }
-        return '获取失败';
+        console.error('获取单词意思失败:', error);
+        return '暂无翻译';
       }
     };
     
@@ -838,7 +838,8 @@ class WordBook {
         if (error.name !== 'AbortError' && error.message !== 'Request aborted') {
           // 再次检查是否已被取消，防止竞态条件
           if (controller.signal.aborted) return;
-          showTooltip(e.target, word, '获取失败');
+          console.error('处理单词翻译时出错:', error);
+          showTooltip(e.target, word, '暂无翻译');
         }
       }
     };

@@ -411,7 +411,7 @@ class WordMarker {
       });
     } catch (error) {
       console.error('从单词本删除单词失败:', error);
-      throw error;
+      // 只记录错误，不抛出，避免影响用户体验
     }
   }
   
