@@ -323,6 +323,7 @@ body {
   min-height: 180px;
   min-width: 280px;
   height: auto;
+  z-index: 1;
 }
 
 .word-card::before {
@@ -341,6 +342,7 @@ body {
   transform: translateY(-2px);
   box-shadow: 0 8px 24px rgba(0, 0, 0, 0.15);
   border-color: var(--primary-color);
+  z-index: 1000;
 }
 
 .word-card:hover::before {
@@ -516,7 +518,7 @@ body {
   margin: 0;
   line-height: 1.3;
   display: -webkit-box;
-  -webkit-line-clamp: 2;
+  -webkit-line-clamp: 1;
   -webkit-box-orient: vertical;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -534,7 +536,7 @@ body {
   font-weight: 400;
   flex: 1;
   display: -webkit-box;
-  -webkit-line-clamp: 3;
+  -webkit-line-clamp: 2;
   -webkit-box-orient: vertical;
   overflow: hidden;
   text-overflow: ellipsis;
