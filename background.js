@@ -118,7 +118,7 @@ class ExtensionBackground {
           return true;
             
         case 'update_review_count':
-          this.updateReviewCount(request.word)
+          this.updateReviewCount(request.word, request.isCorrect)
             .then(() => sendResponse({success: true}));
           return true;
             
@@ -250,7 +250,9 @@ class ExtensionBackground {
         phonetics: '', // 初始化为空字符串，后续手动获取
         added: now,
         reviewed: 0,
-        lastModified: now // 新增：最后修改时间
+        correctReviews: 0, // 正确复习次数
+        lastReviewed: null, // 最后复习时间
+        lastModified: now // 最后修改时间
       };
       await chrome.storage.local.set({[this.storageKeys.words]: dict});
     }
@@ -326,11 +328,21 @@ class ExtensionBackground {
     }
   }
 
-  async updateReviewCount(word) {
+  async updateReviewCount(word, isCorrect = true) {
     const dict = await this.getDictionary();
     if (dict[word]) {
+      // 更新复习次数
       dict[word].reviewed = (dict[word].reviewed || 0) + 1;
-      dict[word].lastModified = Date.now(); // 新增：更新最后修改时间
+      
+      // 更新正确复习次数
+      dict[word].correctReviews = (dict[word].correctReviews || 0) + (isCorrect ? 1 : 0);
+      
+      // 更新最后复习时间
+      dict[word].lastReviewed = Date.now();
+      
+      // 更新最后修改时间
+      dict[word].lastModified = Date.now();
+      
       await chrome.storage.local.set({[this.storageKeys.words]: dict});
     }
     return dict[word]?.reviewed || 0;

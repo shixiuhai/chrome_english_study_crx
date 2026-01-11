@@ -111,11 +111,12 @@ class WordBook {
     }
   }
   
-  async incrementReviewCount(word) {
+  async incrementReviewCount(word, isCorrect = true) {
     try {
       await chrome.runtime.sendMessage({
         type: 'update_review_count',
-        word
+        word,
+        isCorrect
       });
     } catch (error) {
       console.error('更新复习次数失败:', error);
@@ -230,7 +231,10 @@ class WordBook {
                   translation: data?.translation || '',
                   phonetics: data?.phonetics || '',
                   added: data?.added || Date.now(),
-                  reviewed: data?.reviewed || 0
+                  reviewed: data?.reviewed || 0,
+                  correctReviews: data?.correctReviews || 0,
+                  lastReviewed: data?.lastReviewed || null,
+                  lastModified: data?.lastModified || Date.now()
                 };
               });
               this.words.sort((a, b) => b.added - a.added);
@@ -576,17 +580,113 @@ class WordBook {
     document.getElementById('dialogOverlay').classList.add('dialog-show');
   }
   
+  // 计算单词记忆强度
+  calculateMemoryStrength(word) {
+    const now = Date.now();
+    const timeSinceAdded = now - word.added;
+    const timeSinceLastReview = word.lastReviewed ? now - word.lastReviewed : timeSinceAdded;
+    
+    // 基础记忆强度
+    let strength = 1.0;
+    
+    // 根据复习次数调整
+    strength += word.reviewed * 0.1;
+    
+    // 根据复习正确率调整（如果有复习记录）
+    if (word.reviewed > 0) {
+      const correctRate = word.correctReviews / word.reviewed;
+      strength += correctRate * 0.3;
+    }
+    
+    // 根据时间间隔衰减（基于艾宾浩斯遗忘曲线）
+    // 7天半衰期，使用指数衰减模型
+    const decayFactor = Math.exp(-timeSinceLastReview / (86400000 * 7));
+    strength *= decayFactor;
+    
+    // 确保强度在合理范围内
+    return Math.max(0.1, Math.min(1.0, strength));
+  }
+  
   // 生成新的复习单词
-  generateNewReview() {
-    // 选择复习单词：基于复习次数和添加时间
-    const reviewWords = [...this.words]
-      .sort((a, b) => {
-        // 权重：复习次数占70%，添加时间占30%
-        const weightA = a.reviewed * 0.7 + (Date.now() - a.added) * 0.3 / 1000000;
-        const weightB = b.reviewed * 0.7 + (Date.now() - b.added) * 0.3 / 1000000;
-        return weightA - weightB;
-      })
-      .slice(0, 20);
+  generateNewReview(mode = 'standard') {
+    let reviewWords = [];
+    const allWords = [...this.words];
+    
+    // 根据不同模式选择复习单词
+    switch (mode) {
+      case 'standard':
+        // 标准模式：基于记忆强度
+        reviewWords = allWords
+          .map(word => ({
+            ...word,
+            memoryStrength: this.calculateMemoryStrength(word)
+          }))
+          .sort((a, b) => a.memoryStrength - b.memoryStrength)
+          .slice(0, 20);
+        break;
+        
+      case 'random':
+        // 随机模式：随机选择单词
+        reviewWords = [...allWords]
+          .sort(() => Math.random() - 0.5)
+          .slice(0, 20);
+        break;
+        
+      case 'mixed':
+        // 新旧交替模式：新单词和旧单词交替出现
+        const newWords = [...allWords]
+          .sort((a, b) => b.added - a.added) // 最新添加的单词在前
+          .slice(0, 10);
+        
+        const oldWords = [...allWords]
+          .sort((a, b) => a.added - b.added) // 最旧添加的单词在前
+          .slice(0, 10);
+        
+        // 交替合并新单词和旧单词
+        reviewWords = [];
+        for (let i = 0; i < Math.max(newWords.length, oldWords.length); i++) {
+          if (newWords[i]) reviewWords.push(newWords[i]);
+          if (oldWords[i]) reviewWords.push(oldWords[i]);
+          if (reviewWords.length >= 20) break;
+        }
+        break;
+        
+      case 'difficult':
+        // 重点突破模式：专注复习错误率高的单词
+        reviewWords = allWords
+          .filter(word => word.reviewed > 0) // 只选择有复习记录的单词
+          .map(word => ({
+            ...word,
+            errorRate: 1 - (word.correctReviews / word.reviewed)
+          }))
+          .sort((a, b) => b.errorRate - a.errorRate) // 错误率越高，优先级越高
+          .slice(0, 20);
+        
+        // 如果错误率高的单词不足20个，补充一些记忆强度低的单词
+        if (reviewWords.length < 20) {
+          const additionalWords = allWords
+            .filter(word => !reviewWords.find(w => w.word === word.word))
+            .map(word => ({
+              ...word,
+              memoryStrength: this.calculateMemoryStrength(word)
+            }))
+            .sort((a, b) => a.memoryStrength - b.memoryStrength)
+            .slice(0, 20 - reviewWords.length);
+          
+          reviewWords = [...reviewWords, ...additionalWords];
+        }
+        break;
+        
+      default:
+        // 默认使用标准模式
+        reviewWords = allWords
+          .map(word => ({
+            ...word,
+            memoryStrength: this.calculateMemoryStrength(word)
+          }))
+          .sort((a, b) => a.memoryStrength - b.memoryStrength)
+          .slice(0, 20);
+    }
     
     this.showReviewDialog(reviewWords);
   }
@@ -738,8 +838,30 @@ class WordBook {
       
       // 更新对话框内容
       const isPhrase = wordData.word.includes(' ');
+      
+      // 处理单词组，分离单词和标点符号
+      const processWordPhrase = (phrase) => {
+        // 使用正则表达式拆分单词和标点符号
+        // 匹配规则：
+        // \w+ - 一个或多个字母、数字或下划线（单词部分）
+        // [^\w\s]+ - 一个或多个非单词、非空格字符（标点符号部分）
+        // \s+ - 一个或多个空格（分隔符）
+        const parts = phrase.match(/\w+|[^\w\s]+|\s+/g);
+        
+        return parts.map(part => {
+          // 检测是否为单词
+          const isWord = /^\w+$/.test(part);
+          if (isWord) {
+            return `<span class="review-word-part">${part}</span>`;
+          } else {
+            // 非单词部分（标点符号或空格）直接返回
+            return part;
+          }
+        }).join('');
+      };
+      
       const wordContent = isPhrase 
-        ? wordData.word.split(' ').map(word => `<span class="review-word-part">${word}</span>`).join(' ') 
+        ? processWordPhrase(wordData.word) 
         : wordData.word;
       
       dialogContent.innerHTML = `
@@ -749,9 +871,6 @@ class WordBook {
           <div class="review-translation">${wordData.translation || '暂无翻译'}</div>
         </div>
       `;
-      
-      // 更新复习次数
-      await this.incrementReviewCount(wordData.word);
       
       // 设置单词部分事件监听
       setupWordPartListeners();
@@ -769,25 +888,26 @@ class WordBook {
     prevBtn.className = 'dialog-btn dialog-btn-secondary';
     prevBtn.textContent = '上一个';
     prevBtn.disabled = currentIndex === 0;
-    prevBtn.addEventListener('click', async () => {
-      if (currentIndex > 0) {
-        currentIndex--;
-        await renderCurrentWord();
-        prevBtn.disabled = currentIndex === 0;
-        nextBtn.disabled = false;
-      }
-    });
     
-    const nextBtn = document.createElement('button');
-    nextBtn.className = 'dialog-btn dialog-btn-primary';
-    nextBtn.textContent = '下一个';
-    nextBtn.disabled = currentIndex === reviewWords.length - 1;
-    nextBtn.addEventListener('click', async () => {
+    const correctBtn = document.createElement('button');
+    correctBtn.className = 'dialog-btn dialog-btn-primary';
+    correctBtn.textContent = '✅ 正确';
+    
+    const wrongBtn = document.createElement('button');
+    wrongBtn.className = 'dialog-btn dialog-btn-secondary';
+    wrongBtn.textContent = '❌ 错误';
+    
+    // 处理复习结果
+    const handleReviewResult = async (isCorrect) => {
+      const currentWord = reviewWords[currentIndex];
+      // 更新复习记录
+      await this.incrementReviewCount(currentWord.word, isCorrect);
+      
+      // 进入下一个单词
       if (currentIndex < reviewWords.length - 1) {
         currentIndex++;
         await renderCurrentWord();
         prevBtn.disabled = false;
-        nextBtn.disabled = currentIndex === reviewWords.length - 1;
       } else {
         // 复习完成，清除会话
         this.clearReviewSession();
@@ -796,6 +916,22 @@ class WordBook {
         this.renderWordList();
         await this.alert('复习完成！');
       }
+    };
+    
+    prevBtn.addEventListener('click', async () => {
+      if (currentIndex > 0) {
+        currentIndex--;
+        await renderCurrentWord();
+        prevBtn.disabled = currentIndex === 0;
+      }
+    });
+    
+    correctBtn.addEventListener('click', async () => {
+      await handleReviewResult(true);
+    });
+    
+    wrongBtn.addEventListener('click', async () => {
+      await handleReviewResult(false);
     });
     
     const exitBtn = document.createElement('button');
@@ -812,7 +948,8 @@ class WordBook {
     
     dialogFooter.appendChild(exitBtn);
     dialogFooter.appendChild(prevBtn);
-    dialogFooter.appendChild(nextBtn);
+    dialogFooter.appendChild(wrongBtn);
+    dialogFooter.appendChild(correctBtn);
     
     // 渲染当前单词
     renderCurrentWord();
