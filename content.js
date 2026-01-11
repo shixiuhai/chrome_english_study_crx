@@ -58,7 +58,7 @@ class WordMarker {
     this.maxMarkedWords = window.CONFIG?.MAX_MARKED_WORDS || 1000; // 使用配置文件中的最大标记数量
     this.translationQueue = [];
     this.currentTranslations = 0;
-    this.maxTranslations = 5; // 最大同时翻译数量
+    this.maxTranslations = 3; // 减少最大同时翻译数量，降低性能压力
     this.isContextValid = true; // 扩展上下文有效性标志
     this.init();
     this.checkDomain().then(isAllowed => {
@@ -117,6 +117,12 @@ class WordMarker {
     return /(?:https?:\/\/|www\.|^[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3})[\w\-\.\/?=&#%+]+/i.test(text);
   }
 
+  // 新增方法：检测是否包含中文
+  hasChinese(text) {
+    // 正则表达式匹配中文汉字
+    return /[\u4e00-\u9fa5]/.test(text);
+  }
+
   init() {
     // 检查是否已标记，防止重复
     const markCheck = (text) => !this.isAlreadyMarked(text);
@@ -139,6 +145,11 @@ class WordMarker {
         // 如果选区包含整个body/document或是过大范围
         if (container === document.body || container === document.documentElement ||
             range.toString().length > 10000) {
+          return;
+        }
+        
+        // 新增：检查是否包含中文，防止误选中文添加到英文单词表
+        if (this.hasChinese(selectedText)) {
           return;
         }
         
@@ -543,6 +554,12 @@ class WordMarker {
       return;
     }
     
+    // 检查文本是否包含中文，防止添加中文到英文单词表
+    if (this.hasChinese(text)) {
+      console.log('检测到中文，跳过标记单词:', text);
+      return;
+    }
+    
     // 检查当前域名是否被排除
     const isAllowed = await this.checkDomain();
     if (!isAllowed) {
@@ -592,34 +609,49 @@ class WordMarker {
     // 检查扩展上下文是否有效
     if (!this.isContextValid) {
       console.log('扩展上下文已销毁，跳过翻译请求');
-      this.currentTranslations--;
       this.processTranslationQueue();
       return;
     }
     
     this.currentTranslations++;
     
-    this.getTranslation(request.text).then(translation => {
-      // 再次检查扩展上下文是否有效
-      if (!this.isContextValid) {
-        console.log('扩展上下文已销毁，跳过翻译结果处理');
-        return;
-      }
-      
-      // 更新当前标记的翻译
-      this.updateMarkTranslation(request.markId, translation);
-      
-      // 保存到存储
-      this.saveMark({id: request.markId, text: request.text, translation});
-      
-      // 标记页面上所有其他相同的单词/词组
-      this.markOtherOccurrences(request.text, translation);
-    }).finally(() => {
-      // 翻译完成，减少计数
-      this.currentTranslations--;
-      // 处理队列中的下一个请求
-      this.processTranslationQueue();
+    // 添加翻译超时处理，防止长时间等待导致页面卡死
+    const timeoutPromise = new Promise((_, reject) => {
+      setTimeout(() => reject(new Error('Translation timeout')), 10000); // 10秒超时
     });
+    
+    Promise.race([this.getTranslation(request.text), timeoutPromise])
+      .then(translation => {
+        // 再次检查扩展上下文是否有效
+        if (!this.isContextValid) {
+          console.log('扩展上下文已销毁，跳过翻译结果处理');
+          return;
+        }
+        
+        // 更新当前标记的翻译
+        this.updateMarkTranslation(request.markId, translation);
+        
+        // 保存到存储
+        this.saveMark({id: request.markId, text: request.text, translation});
+        
+        // 标记页面上所有其他相同的单词/词组（限制处理频率）
+        requestAnimationFrame(() => {
+          this.markOtherOccurrences(request.text, translation);
+        });
+      })
+      .catch(error => {
+        console.error('翻译处理失败:', error);
+        // 确保UI更新，避免一直显示“正在翻译”
+        if (this.isContextValid) {
+          this.updateMarkTranslation(request.markId, `${request.text}的翻译`);
+        }
+      })
+      .finally(() => {
+        // 翻译完成，减少计数（确保不出现负数）
+        this.currentTranslations = Math.max(0, this.currentTranslations - 1);
+        // 处理队列中的下一个请求
+        this.processTranslationQueue();
+      });
   }
   
   // 处理翻译队列
@@ -655,8 +687,17 @@ class WordMarker {
     }
   }
   
-  // 标记页面上其他相同的单词/词组
+  // 标记页面上其他相同的单词/词组（优化版）
   markOtherOccurrences(text, translation) {
+    // 限制每个单词的最大标记数量，避免性能问题
+    const maxOccurrences = 10; // 每个单词最多标记10个其他出现
+    let occurrencesMarked = 0;
+    
+    // 限制处理的文本节点数量，避免遍历整个文档
+    const maxNodesToProcess = 100; // 最多处理100个文本节点
+    let nodesProcessed = 0;
+    
+    // 使用TreeWalker遍历文本节点
     const walker = document.createTreeWalker(
       document.body,
       NodeFilter.SHOW_TEXT,
@@ -665,27 +706,33 @@ class WordMarker {
     );
     
     let node;
-    while (node = walker.nextNode()) {
-      if (node.parentNode.nodeName === 'SCRIPT' || node.parentNode.nodeName === 'STYLE' || node.parentNode.nodeName === 'NOSCRIPT') {
-        continue;
-      }
+    while ((node = walker.nextNode()) && nodesProcessed < maxNodesToProcess && occurrencesMarked < maxOccurrences) {
+      nodesProcessed++;
       
-      // 跳过已标记的节点
-      if (node.parentNode.classList?.contains('word-mark')) {
+      // 跳过不需要处理的节点
+      if (node.parentNode.nodeName === 'SCRIPT' || 
+          node.parentNode.nodeName === 'STYLE' || 
+          node.parentNode.nodeName === 'NOSCRIPT' ||
+          node.parentNode.classList?.contains('word-mark')) {
         continue;
       }
       
       const nodeText = node.nodeValue;
+      if (!nodeText || !nodeText.includes(text)) {
+        continue; // 快速跳过不包含目标文本的节点
+      }
+      
       const matches = [];
       const regex = new RegExp(escapeRegExp(text), 'gi');
       let match;
       
       // 1. 先收集所有匹配，不修改DOM
       regex.lastIndex = 0;
-      while ((match = regex.exec(nodeText)) !== null) {
+      while ((match = regex.exec(nodeText)) !== null && occurrencesMarked < maxOccurrences) {
         // 检查匹配是否有效
         if (match.index + text.length <= nodeText.length) {
           matches.push({...match});
+          occurrencesMarked++;
         }
         
         // 避免无限循环（零长度匹配）
@@ -701,8 +748,8 @@ class WordMarker {
       for (const match of matches) {
         try {
           // 再次检查节点是否仍然有效
-          if (!node.parentNode || node.nodeValue !== nodeText) {
-            break;
+          if (!node.parentNode) {
+            continue;
           }
           
           // 检查索引是否有效
