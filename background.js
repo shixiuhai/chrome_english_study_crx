@@ -85,7 +85,11 @@ class ExtensionBackground {
     chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
       switch(request.type) {
         case 'translate':
-          this.handleTranslation(request.word, sendResponse);
+          this.handleTranslation(request.word, sendResponse, true);
+          return true;
+        
+        case 'translate_no_save':
+          this.handleTranslation(request.word, sendResponse, false);
           return true;
           
         case 'save_word':
@@ -165,7 +169,7 @@ class ExtensionBackground {
     });
   }
 
-  async handleTranslation(word, sendResponse) {
+  async handleTranslation(word, sendResponse, saveToDictionary = true) {
     try {
       const apiUrl = `${CONFIG.API_BASE_URL}${CONFIG.ENDPOINTS.TRANSLATE}`;
       const response = await fetchWithRetry(`${apiUrl}?word=${encodeURIComponent(word)}`);
@@ -175,7 +179,9 @@ class ExtensionBackground {
         console.error('翻译API请求失败:', response.status);
         // 回退到原虚拟翻译
         const fallbackTranslation = `${word}的翻译`;
-        await this.saveWord(word, fallbackTranslation);
+        if (saveToDictionary) {
+          await this.saveWord(word, fallbackTranslation);
+        }
         sendResponse({translation: fallbackTranslation});
         return;
       }
@@ -187,7 +193,9 @@ class ExtensionBackground {
         console.error('翻译API返回数据格式错误:', jsonError);
         // 回退到原虚拟翻译
         const fallbackTranslation = `${word}的翻译`;
-        await this.saveWord(word, fallbackTranslation);
+        if (saveToDictionary) {
+          await this.saveWord(word, fallbackTranslation);
+        }
         sendResponse({translation: fallbackTranslation});
         return;
       }
@@ -196,7 +204,9 @@ class ExtensionBackground {
       const translation = this.sanitizeTranslation(result?.text) || `${word}的翻译`;
       
       // 只保存到字典，不获取音标
-      await this.saveWord(word, translation);
+      if (saveToDictionary) {
+        await this.saveWord(word, translation);
+      }
       
       sendResponse({
         translation
@@ -205,7 +215,9 @@ class ExtensionBackground {
       console.error('翻译失败:', error);
       // 回退到原虚拟翻译
       const fallbackTranslation = `${word}的翻译`;
-      await this.saveWord(word, fallbackTranslation);
+      if (saveToDictionary) {
+        await this.saveWord(word, fallbackTranslation);
+      }
       sendResponse({translation: fallbackTranslation});
     }
   }

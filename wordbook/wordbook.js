@@ -586,7 +586,7 @@ class WordBook {
         const weightB = b.reviewed * 0.7 + (Date.now() - b.added) * 0.3 / 1000000;
         return weightA - weightB;
       })
-      .slice(0, 10);
+      .slice(0, 20);
     
     this.showReviewDialog(reviewWords);
   }
@@ -598,6 +598,137 @@ class WordBook {
     const dialogContent = document.getElementById('dialogBody');
     const dialogFooter = document.getElementById('dialogFooter');
     
+    // 创建全局Tooltip元素
+    let tooltipElement = null;
+    let currentAbortController = null;
+    
+    // 初始化Tooltip
+    const initTooltip = () => {
+      tooltipElement = document.createElement('div');
+      tooltipElement.className = 'review-tooltip';
+      tooltipElement.innerHTML = '<div class="review-tooltip-word"></div><div class="review-tooltip-meaning"></div>';
+      document.body.appendChild(tooltipElement);
+    };
+    
+    // 显示Tooltip
+    const showTooltip = (target, word, meaning) => {
+      if (!tooltipElement) initTooltip();
+      
+      // 设置Tooltip内容
+      tooltipElement.querySelector('.review-tooltip-word').textContent = word;
+      tooltipElement.querySelector('.review-tooltip-meaning').textContent = meaning;
+      
+      // 计算Tooltip位置
+      const targetRect = target.getBoundingClientRect();
+      const tooltipRect = tooltipElement.getBoundingClientRect();
+      
+      tooltipElement.style.left = `${targetRect.left + targetRect.width / 2 - tooltipRect.width / 2}px`;
+      tooltipElement.style.top = `${targetRect.top - tooltipRect.height - 10}px`;
+      
+      // 显示Tooltip
+      tooltipElement.classList.add('show');
+    };
+    
+    // 隐藏Tooltip
+    const hideTooltip = () => {
+      if (tooltipElement) {
+        tooltipElement.classList.remove('show');
+      }
+      // 取消当前请求
+      if (currentAbortController) {
+        currentAbortController.abort();
+        currentAbortController = null;
+      }
+    };
+    
+    // 获取单词意思
+    const fetchWordMeaning = async (word, controller) => {
+      try {
+        // 从当前单词列表中查找单词意思
+        const foundWord = this.words.find(w => w.word.toLowerCase() === word.toLowerCase());
+        if (foundWord) {
+          return foundWord.translation || '暂无翻译';
+        }
+        
+        // 检查是否已被取消
+        if (controller.signal.aborted) {
+          throw new Error('Request aborted');
+        }
+        
+        // 调用划词翻译接口（不保存到单词本）
+        return await new Promise((resolve, reject) => {
+          // 监听取消信号
+          controller.signal.addEventListener('abort', () => {
+            reject(new Error('Request aborted'));
+          });
+          
+          // 发送翻译请求，使用translate_no_save类型避免自动保存
+          chrome.runtime.sendMessage(
+            {type: 'translate_no_save', word}, 
+            (response) => {
+              // 检查是否已被取消
+              if (controller.signal.aborted) {
+                return;
+              }
+              
+              if (chrome.runtime.lastError) {
+                reject(new Error(chrome.runtime.lastError.message));
+                return;
+              }
+              
+              resolve(response.translation || '暂无翻译');
+            }
+          );
+        });
+      } catch (error) {
+        if (error.name === 'AbortError' || error.message === 'Request aborted') {
+          throw error;
+        }
+        return '获取失败';
+      }
+    };
+    
+    // 处理鼠标进入事件
+    const handleMouseEnter = async (e) => {
+      const word = e.target.textContent.trim();
+      if (!word) return;
+      
+      // 显示加载状态
+      showTooltip(e.target, word, '加载中...');
+      
+      // 创建AbortController
+      const controller = new AbortController();
+      currentAbortController = controller;
+      
+      try {
+        // 获取单词意思
+        const meaning = await fetchWordMeaning(word, controller);
+        // 检查是否已被取消
+        if (controller.signal.aborted) return;
+        // 更新Tooltip内容
+        showTooltip(e.target, word, meaning);
+      } catch (error) {
+        // 如果是取消错误，不做处理
+        if (error.name !== 'AbortError' && error.message !== 'Request aborted') {
+          showTooltip(e.target, word, '获取失败');
+        }
+      }
+    };
+    
+    // 处理鼠标离开事件
+    const handleMouseLeave = () => {
+      hideTooltip();
+    };
+    
+    // 设置单词部分事件监听
+    const setupWordPartListeners = () => {
+      const wordParts = dialogContent.querySelectorAll('.review-word-part');
+      wordParts.forEach(part => {
+        part.addEventListener('mouseenter', handleMouseEnter);
+        part.addEventListener('mouseleave', handleMouseLeave);
+      });
+    };
+    
     // 渲染当前单词
     const renderCurrentWord = async () => {
       const wordData = reviewWords[currentIndex];
@@ -606,9 +737,14 @@ class WordBook {
       document.getElementById('dialogTitle').textContent = `复习单词 (${currentIndex + 1}/${reviewWords.length})`;
       
       // 更新对话框内容
+      const isPhrase = wordData.word.includes(' ');
+      const wordContent = isPhrase 
+        ? wordData.word.split(' ').map(word => `<span class="review-word-part">${word}</span>`).join(' ') 
+        : wordData.word;
+      
       dialogContent.innerHTML = `
         <div class="review-word-container">
-          <div class="review-word">${wordData.word}</div>
+          <div class="review-word">${wordContent}</div>
           ${wordData.phonetics ? `<div class="review-phonetics">/${wordData.phonetics}/</div>` : ''}
           <div class="review-translation">${wordData.translation || '暂无翻译'}</div>
         </div>
@@ -616,6 +752,9 @@ class WordBook {
       
       // 更新复习次数
       await this.incrementReviewCount(wordData.word);
+      
+      // 设置单词部分事件监听
+      setupWordPartListeners();
       
       // 保存复习会话
       this.saveReviewSession(reviewWords, currentIndex);
@@ -712,6 +851,12 @@ class WordBook {
     if (this.currentReviewKeydownListener) {
       document.removeEventListener('keydown', this.currentReviewKeydownListener);
       this.currentReviewKeydownListener = null;
+    }
+    
+    // 清理复习页面的Tooltip
+    const tooltip = document.querySelector('.review-tooltip');
+    if (tooltip) {
+      tooltip.remove();
     }
   }
   

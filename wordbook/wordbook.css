@@ -933,6 +933,7 @@ body {
 .review-word-container {
   text-align: center;
   padding: 20px;
+  position: relative;
 }
 
 .review-word {
@@ -940,6 +941,20 @@ body {
   font-weight: bold;
   color: var(--text-color);
   margin-bottom: 10px;
+}
+
+/* 复习单词组中的单个单词样式 */
+.review-word-part {
+  cursor: pointer;
+  padding: 2px 6px;
+  border-radius: 4px;
+  transition: all 0.2s ease;
+  position: relative;
+}
+
+.review-word-part:hover {
+  background-color: rgba(102, 126, 234, 0.1);
+  color: var(--primary-color);
 }
 
 .review-phonetics {
@@ -955,6 +970,74 @@ body {
   padding: 15px;
   background-color: #f7fafc;
   border-radius: 8px;
+}
+
+/* 复习页面专用Tooltip样式 */
+.review-tooltip {
+  position: absolute;
+  background: rgba(255, 255, 255, 0.98);
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  box-shadow: 0 6px 24px rgba(0, 0, 0, 0.18);
+  padding: 12px 16px;
+  font-size: 14px;
+  line-height: 1.5;
+  z-index: 10000;
+  max-width: 300px;
+  white-space: normal;
+  word-break: break-word;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 0.2s ease, transform 0.2s ease;
+  transform: translateY(8px);
+  backdrop-filter: blur(10px);
+}
+
+/* 添加箭头 */
+.review-tooltip::after {
+  content: '';
+  position: absolute;
+  bottom: 100%;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 0;
+  height: 0;
+  border-left: 6px solid transparent;
+  border-right: 6px solid transparent;
+  border-bottom: 6px solid rgba(255, 255, 255, 0.98);
+  z-index: 10001;
+}
+
+.review-tooltip::before {
+  content: '';
+  position: absolute;
+  bottom: 100%;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 0;
+  height: 0;
+  border-left: 7px solid transparent;
+  border-right: 7px solid transparent;
+  border-bottom: 7px solid #e2e8f0;
+  z-index: 9999;
+}
+
+.review-tooltip.show {
+  opacity: 1;
+  transform: translateY(0);
+}
+
+.review-tooltip-word {
+  font-weight: 700;
+  font-size: 16px;
+  color: #1f2937;
+  margin-bottom: 4px;
+}
+
+.review-tooltip-meaning {
+  font-size: 14px;
+  color: #374151;
+  line-height: 1.5;
 }
 
 .dialog-btn {
