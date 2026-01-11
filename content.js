@@ -132,9 +132,19 @@ class WordMarker {
       return text.split(/\s+/).filter(word => word.length > 0).length;
     }
 
+    // 添加延迟确认定时器属性
+    this.markTimeout = null;
+    this.pendingMarkData = null;
+
     document.addEventListener('mouseup', (event) => {
       const selection = window.getSelection();
       const selectedText = selection.toString();
+      
+      // 清除之前的定时器
+      if (this.markTimeout) {
+        clearTimeout(this.markTimeout);
+        this.markTimeout = null;
+      }
       
       // 跳过Ctrl键的选中（包括Ctrl+A）
       if (selectedText && !event.ctrlKey) {
@@ -171,38 +181,37 @@ class WordMarker {
           return;
         }
         
-        // 调整选区，排除前后空格
+        // 优化选区调整逻辑，排除前后空格
         const text = range.toString();
         const leadingSpaces = text.match(/^\s*/)[0].length;
         const trailingSpaces = text.match(/\s*$/)[0].length;
         
-        // 创建新的范围，跳过前后空格
-        const newRange = document.createRange();
+        // 计算新的偏移量
+        let newStartOffset = range.startOffset + leadingSpaces;
+        let newEndOffset = range.endOffset - trailingSpaces;
         
-        // 验证startOffset有效性
-        const startOffset = range.startOffset + leadingSpaces;
-        const startContainerLength = range.startContainer.nodeType === Node.TEXT_NODE ? range.startContainer.length : 0;
+        // 简化有效性验证
+        if (range.startContainer.nodeType === Node.TEXT_NODE) {
+          newStartOffset = Math.min(newStartOffset, range.startContainer.length);
+        }
+        if (range.endContainer.nodeType === Node.TEXT_NODE) {
+          newEndOffset = Math.min(newEndOffset, range.endContainer.length);
+        }
         
-        // 验证endOffset有效性
-        const endOffset = range.endOffset - trailingSpaces;
-        const endContainerLength = range.endContainer.nodeType === Node.TEXT_NODE ? range.endContainer.length : 0;
-        
-        // 确保offset值有效，避免IndexSizeError
-        const validStartOffset = Math.max(0, Math.min(startOffset, startContainerLength));
-        let validEndOffset = Math.max(0, endOffset);
+        // 确保偏移量有效
+        newStartOffset = Math.max(0, newStartOffset);
+        newEndOffset = Math.max(0, newEndOffset);
         
         // 如果是同一容器，确保endOffset不小于startOffset
         if (range.startContainer === range.endContainer) {
-          validEndOffset = Math.max(validStartOffset, Math.min(validEndOffset, endContainerLength));
-        } else {
-          validEndOffset = Math.min(validEndOffset, endContainerLength);
+          newEndOffset = Math.max(newStartOffset, newEndOffset);
         }
         
+        // 更新选区
+        const newRange = document.createRange();
         try {
-          newRange.setStart(range.startContainer, validStartOffset);
-          newRange.setEnd(range.endContainer, validEndOffset);
-          
-          // 更新选区
+          newRange.setStart(range.startContainer, newStartOffset);
+          newRange.setEnd(range.endContainer, newEndOffset);
           selection.removeAllRanges();
           selection.addRange(newRange);
         } catch (e) {
@@ -213,7 +222,32 @@ class WordMarker {
         }
         
         if (markCheck(trimmedText)) {
-          this.markWord(selection, trimmedText);
+          // 保存待处理的数据
+          this.pendingMarkData = {
+            selection: window.getSelection(),
+            text: trimmedText
+          };
+          
+          // 添加300ms延迟确认机制
+          this.markTimeout = setTimeout(() => {
+            if (this.pendingMarkData) {
+              this.markWord(this.pendingMarkData.selection, this.pendingMarkData.text);
+              this.pendingMarkData = null;
+            }
+          }, 300);
+        }
+      }
+    });
+    
+    // 添加ESC键取消标记功能
+    document.addEventListener('keydown', (event) => {
+      if (event.key === 'Escape') {
+        if (this.markTimeout) {
+          clearTimeout(this.markTimeout);
+          this.markTimeout = null;
+        }
+        if (this.pendingMarkData) {
+          this.pendingMarkData = null;
         }
       }
     });
@@ -689,97 +723,101 @@ class WordMarker {
   
   // 标记页面上其他相同的单词/词组（优化版）
   markOtherOccurrences(text, translation) {
-    // 限制每个单词的最大标记数量，避免性能问题
-    const maxOccurrences = 10; // 每个单词最多标记10个其他出现
-    let occurrencesMarked = 0;
-    
-    // 限制处理的文本节点数量，避免遍历整个文档
-    const maxNodesToProcess = 100; // 最多处理100个文本节点
-    let nodesProcessed = 0;
-    
-    // 使用TreeWalker遍历文本节点
-    const walker = document.createTreeWalker(
-      document.body,
-      NodeFilter.SHOW_TEXT,
-      null,
-      false
-    );
-    
-    let node;
-    while ((node = walker.nextNode()) && nodesProcessed < maxNodesToProcess && occurrencesMarked < maxOccurrences) {
-      nodesProcessed++;
+    // 使用requestAnimationFrame避免阻塞主线程
+    requestAnimationFrame(() => {
+      // 进一步限制每个单词的最大标记数量，提高性能
+      const maxOccurrences = 5; // 每个单词最多标记5个其他出现
+      let occurrencesMarked = 0;
       
-      // 跳过不需要处理的节点
-      if (node.parentNode.nodeName === 'SCRIPT' || 
-          node.parentNode.nodeName === 'STYLE' || 
-          node.parentNode.nodeName === 'NOSCRIPT' ||
-          node.parentNode.classList?.contains('word-mark')) {
-        continue;
-      }
+      // 进一步减少处理的文本节点数量
+      const maxNodesToProcess = 50; // 最多处理50个文本节点
+      let nodesProcessed = 0;
       
-      const nodeText = node.nodeValue;
-      if (!nodeText || !nodeText.includes(text)) {
-        continue; // 快速跳过不包含目标文本的节点
-      }
+      // 使用TreeWalker遍历文本节点
+      const walker = document.createTreeWalker(
+        document.body,
+        NodeFilter.SHOW_TEXT,
+        null,
+        false
+      );
       
-      const matches = [];
-      const regex = new RegExp(escapeRegExp(text), 'gi');
-      let match;
-      
-      // 1. 先收集所有匹配，不修改DOM
-      regex.lastIndex = 0;
-      while ((match = regex.exec(nodeText)) !== null && occurrencesMarked < maxOccurrences) {
-        // 检查匹配是否有效
-        if (match.index + text.length <= nodeText.length) {
-          matches.push({...match});
-          occurrencesMarked++;
-        }
+      let node;
+      while ((node = walker.nextNode()) && nodesProcessed < maxNodesToProcess && occurrencesMarked < maxOccurrences) {
+        nodesProcessed++;
         
-        // 避免无限循环（零长度匹配）
-        if (regex.lastIndex === match.index) {
-          regex.lastIndex++;
-        }
-      }
-      
-      // 2. 按位置降序处理匹配（从后往前），避免DOM修改影响后续匹配
-      matches.sort((a, b) => b.index - a.index);
-      
-      // 3. 遍历处理所有匹配
-      for (const match of matches) {
-        try {
-          // 再次检查节点是否仍然有效
-          if (!node.parentNode) {
-            continue;
-          }
-          
-          // 检查索引是否有效
-          if (match.index < 0 || match.index + text.length > node.nodeValue.length) {
-            continue;
-          }
-          
-          // 创建范围标记
-          const range = document.createRange();
-          range.setStart(node, match.index);
-          range.setEnd(node, match.index + text.length);
-          
-          const markId = `mark_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
-          const originalContent = range.cloneContents();
-          
-          // 直接使用翻译结果创建标记
-          this.createMarkElement(range, text, translation, markId, originalContent);
-          this.markedWords.set(markId, {
-            text,
-            translation,
-            originalContent
-          });
-          this.saveMark({id: markId, text, translation});
-        } catch (error) {
-          console.warn('标记单词时出错:', error.message);
-          // 跳过错误，继续处理其他匹配
+        // 跳过不需要处理的节点
+        if (node.parentNode.nodeName === 'SCRIPT' || 
+            node.parentNode.nodeName === 'STYLE' || 
+            node.parentNode.nodeName === 'NOSCRIPT' ||
+            node.parentNode.classList?.contains('word-mark')) {
           continue;
         }
+        
+        const nodeText = node.nodeValue;
+        if (!nodeText || !nodeText.includes(text)) {
+          continue; // 快速跳过不包含目标文本的节点
+        }
+        
+        const matches = [];
+        const regex = new RegExp(escapeRegExp(text), 'gi');
+        let match;
+        
+        // 1. 先收集所有匹配，不修改DOM
+        regex.lastIndex = 0;
+        while ((match = regex.exec(nodeText)) !== null && occurrencesMarked < maxOccurrences) {
+          // 检查匹配是否有效
+          if (match.index + text.length <= nodeText.length) {
+            matches.push({...match});
+            occurrencesMarked++;
+          }
+          
+          // 避免无限循环（零长度匹配）
+          if (regex.lastIndex === match.index) {
+            regex.lastIndex++;
+          }
+        }
+        
+        // 2. 按位置降序处理匹配（从后往前），避免DOM修改影响后续匹配
+        matches.sort((a, b) => b.index - a.index);
+        
+        // 3. 遍历处理所有匹配
+        for (const match of matches) {
+          try {
+            // 再次检查节点是否仍然有效
+            if (!node.parentNode) {
+              continue;
+            }
+            
+            // 检查索引是否有效
+            if (match.index < 0 || match.index + text.length > node.nodeValue.length) {
+              continue;
+            }
+            
+            // 创建范围标记
+            const range = document.createRange();
+            range.setStart(node, match.index);
+            range.setEnd(node, match.index + text.length);
+            
+            const markId = `mark_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+            const originalContent = range.cloneContents();
+            
+            // 直接使用翻译结果创建标记
+            this.createMarkElement(range, text, translation, markId, originalContent);
+            this.markedWords.set(markId, {
+              text,
+              translation,
+              originalContent
+            });
+            // 批量保存，减少存储操作
+            this.saveMark({id: markId, text, translation});
+          } catch (error) {
+            console.warn('标记单词时出错:', error.message);
+            // 跳过错误，继续处理其他匹配
+            continue;
+          }
+        }
       }
-    }
+    });
   }
 
   createMarkElement(range, text, translation, id, originalContent) {
