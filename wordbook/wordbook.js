@@ -303,6 +303,7 @@ class WordBook {
           <button class="speak-btn" title="朗读">🔊</button>
           <button class="edit-btn" title="编辑">✏️</button>
           ${!wordData.word.includes(' ') ? `<button class="phonetic-btn" title="获取音标">🔤</button>` : ''}
+          <button class="review-btn" title="单独复习">📖</button>
           <button class="delete-btn" title="删除">🗑️</button>
         </div>
       `;
@@ -531,6 +532,23 @@ class WordBook {
       this.handleEditWord(e);
     } else if (e.target.classList.contains('phonetic-btn')) {
       this.handleGetPhonetic(e);
+    } else if (e.target.classList.contains('review-btn')) {
+      this.handleSingleReview(e);
+    }
+  }
+  
+  // 单独复习处理
+  handleSingleReview(e) {
+    const card = e.target.closest('.word-card');
+    const word = card.dataset.word;
+    
+    // 查找当前单词的数据
+    const wordData = this.words.find(w => w.word === word);
+    if (wordData) {
+      // 创建只包含当前单词的复习列表
+      const reviewWords = [wordData];
+      // 调用复习弹窗，只复习当前单词
+      this.showReviewDialog(reviewWords);
     }
   }
 
