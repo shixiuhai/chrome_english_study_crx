@@ -1,0 +1,53 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <title>我的单词本</title>
+  <link rel="stylesheet" href="wordbook.css">
+</head>
+<body>
+  <div class="wordbook-container">
+    <!-- 顶部核心功能区 -->
+    <header class="header">
+      <div class="header-top">
+        <h1><span class="icon">📚</span> 单词本</h1>
+      </div>
+    </header>
+    
+    <!-- 单词列表区域 -->
+    <main class="main-content">
+      <!-- 搜索功能 -->
+      <div class="search-section">
+        <div class="search-box">
+          <input type="text" placeholder="搜索单词...">
+        </div>
+      </div>
+      
+      <!-- 单词列表 -->
+      <div class="word-list" id="wordList">
+        <!-- 单词卡片将通过JS动态生成 -->
+      </div>
+    </main>
+  </div>
+  
+  <script src="../config.js"></script>
+  <script src="wordbook.js"></script>
+  
+  <!-- 自定义对话框 -->
+  <div id="customDialog" class="custom-dialog">
+    <div class="dialog-content">
+      <div class="dialog-header">
+        <h3 id="dialogTitle">提示</h3>
+        <button class="dialog-close">&times;</button>
+      </div>
+      <div class="dialog-body" id="dialogBody">
+        <!-- 对话框内容将通过JS动态设置 -->
+      </div>
+      <div class="dialog-footer" id="dialogFooter">
+        <!-- 按钮将通过JS动态添加 -->
+      </div>
+    </div>
+  </div>
+  <div id="dialogOverlay" class="dialog-overlay"></div>
+</body>
+</html>

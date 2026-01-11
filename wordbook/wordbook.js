@@ -1,0 +1,473 @@
+class WordBook {
+  constructor() {
+    this.wordListElement = document.getElementById('wordList');
+    this.searchInput = document.querySelector('.search-box input');
+    this.words = [];
+    
+    this.init();
+    this.initDialog();
+  }
+
+  // 初始化对话框
+  initDialog() {
+    // 关闭按钮事件
+    document.querySelector('.dialog-close').addEventListener('click', () => {
+      this.hideDialog();
+    });
+    
+    // 点击遮罩层关闭对话框
+    document.getElementById('dialogOverlay').addEventListener('click', () => {
+      this.hideDialog();
+    });
+    
+    // ESC键关闭对话框
+    document.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape') {
+        this.hideDialog();
+      }
+    });
+  }
+  
+  // 显示自定义对话框
+  showDialog(title, message, options = {}) {
+    const { 
+      type = 'alert', 
+      primaryBtn = '确定', 
+      secondaryBtn = '取消', 
+      onPrimary, 
+      onSecondary 
+    } = options;
+    
+    // 设置标题和内容
+    document.getElementById('dialogTitle').textContent = title;
+    document.getElementById('dialogBody').textContent = message;
+    
+    // 设置按钮
+    const footer = document.getElementById('dialogFooter');
+    footer.innerHTML = '';
+    
+    // 主按钮
+    const primaryButton = document.createElement('button');
+    primaryButton.className = 'dialog-btn dialog-btn-primary';
+    primaryButton.textContent = primaryBtn;
+    primaryButton.addEventListener('click', () => {
+      this.hideDialog();
+      if (onPrimary) onPrimary();
+    });
+    footer.appendChild(primaryButton);
+    
+    // 只有confirm类型才显示次要按钮
+    if (type === 'confirm') {
+      const secondaryButton = document.createElement('button');
+      secondaryButton.className = 'dialog-btn dialog-btn-secondary';
+      secondaryButton.textContent = secondaryBtn;
+      secondaryButton.addEventListener('click', () => {
+        this.hideDialog();
+        if (onSecondary) onSecondary();
+      });
+      footer.appendChild(secondaryButton);
+    }
+    
+    // 显示对话框
+    document.getElementById('customDialog').classList.add('dialog-show');
+    document.getElementById('dialogOverlay').classList.add('dialog-show');
+  }
+  
+  // 隐藏自定义对话框
+  hideDialog() {
+    document.getElementById('customDialog').classList.remove('dialog-show');
+    document.getElementById('dialogOverlay').classList.remove('dialog-show');
+  }
+  
+  // 替换alert方法
+  alert(message, title = '提示') {
+    return new Promise((resolve) => {
+      this.showDialog(title, message, {
+        onPrimary: resolve
+      });
+    });
+  }
+  
+  // 替换confirm方法
+  confirm(message, title = '确认') {
+    return new Promise((resolve) => {
+      this.showDialog(title, message, {
+        type: 'confirm',
+        onPrimary: () => resolve(true),
+        onSecondary: () => resolve(false)
+      });
+    });
+  }
+
+  // 添加朗读方法
+  async speakWord(word) {
+    try {
+      // 直接使用浏览器原生TTS，不再调用API获取音频
+      this.fallbackTTS(word);
+      await this.incrementReviewCount(word);
+    } catch (error) {
+      console.error('播放发音失败:', error);
+      this.fallbackTTS(word);
+    }
+  }
+  
+  async incrementReviewCount(word) {
+    try {
+      await chrome.runtime.sendMessage({
+        type: 'update_review_count',
+        word
+      });
+    } catch (error) {
+      console.error('更新复习次数失败:', error);
+    }
+  }
+  
+  fallbackTTS(word) {
+    const utterance = new SpeechSynthesisUtterance(word);
+    utterance.lang = 'en-US';
+    utterance.rate = 0.9;
+    try {
+      speechSynthesis.speak(utterance);
+    } catch (e) {
+      console.error('TTS失败:', e);
+    }
+  }
+  
+  async init() {
+    this.setupLoadingUI();
+    try {
+      // 加载单词
+      await this.loadWords();
+      this.renderWordList();
+      this.setupEventListeners();
+    } catch (error) {
+      console.error('初始化失败:', error);
+      // 确保在初始化失败时也能显示错误信息并结束加载状态
+      this.words = [];
+      this.showError('加载单词本失败，请重试');
+    }
+  }
+
+
+
+  
+
+  async getPhonetics(word) {
+    try {
+      // 如果是词组(包含空格)，跳过音标获取
+      if (word.includes(' ')) {
+        return { phoneticText: '', audioUrl: '' };
+      }
+      
+      return await new Promise((resolve, reject) => {
+        chrome.runtime.sendMessage(
+          {type: 'get_phonetics', word},
+          response => {
+            if (chrome.runtime.lastError) {
+              // 特别处理扩展上下文被销毁的错误
+              if (chrome.runtime.lastError.message.includes('Extension context invalidated')) {
+                console.log('扩展上下文已销毁，跳过获取音标');
+                return resolve({ phoneticText: '', audioUrl: '' });
+              }
+              console.error('获取音标失败:', chrome.runtime.lastError);
+              return resolve({ phoneticText: '', audioUrl: '' });
+            }
+            // 注意：background.js返回的是 {phonetics: {...}} 结构
+            const phoneticsData = response?.phonetics || {};
+            resolve({
+              phoneticText: phoneticsData?.phoneticText || '',
+              audioUrl: phoneticsData?.audioUrl || ''
+            });
+          }
+        );
+      });
+    } catch (error) {
+      // 特别处理扩展上下文被销毁的错误
+      if (error.message.includes('Extension context invalidated')) {
+        console.log('扩展上下文已销毁，跳过获取音标');
+        return { phoneticText: '', audioUrl: '' };
+      }
+      console.error('获取音标失败:', error);
+      return { phoneticText: '', audioUrl: '' };
+    }
+  }
+
+  setupLoadingUI() {
+    this.wordListElement.innerHTML = '<div class="loading">加载单词本中...</div>';
+  }
+
+  showError(message) {
+    this.wordListElement.innerHTML = `<div class="error">${message}</div>`;
+  }
+
+  async loadWords() {
+    try {
+      return await new Promise((resolve) => {
+        chrome.runtime.sendMessage(
+          {type: 'get_dictionary'},
+          (response) => {
+            // 确保在所有情况下都初始化 this.words
+            this.words = [];
+            
+            if (chrome.runtime.lastError) {
+              // 特别处理扩展上下文被销毁的错误
+              if (chrome.runtime.lastError.message.includes('Extension context invalidated')) {
+                console.log('扩展上下文已销毁，显示空单词本');
+                this.showError('扩展上下文已更新，请重新打开插件');
+                return resolve();
+              }
+              console.error('获取单词本失败:', chrome.runtime.lastError);
+              this.showError('连接插件失败');
+              return resolve();
+            }
+            
+            try {
+              const entries = Object.entries(response?.dictionary || {});
+              this.words = entries.map(([word, data]) => {
+                return {
+                  word,
+                  translation: data?.translation || '',
+                  phonetics: data?.phonetics || '',
+                  added: data?.added || Date.now(),
+                  reviewed: data?.reviewed || 0
+                };
+              });
+              this.words.sort((a, b) => b.added - a.added);
+              resolve();
+            } catch (error) {
+              console.error('加载单词出错:', error);
+              this.showError('加载单词数据出错');
+              resolve();
+            }
+          }
+        );
+      });
+    } catch (error) {
+      // 确保在所有情况下都初始化 this.words
+      this.words = [];
+      
+      // 特别处理扩展上下文被销毁的错误
+      if (error.message.includes('Extension context invalidated')) {
+        console.log('扩展上下文已销毁，显示空单词本');
+        this.showError('扩展上下文已更新，请重新打开插件');
+        return Promise.resolve();
+      }
+      console.error('加载单词时出错:', error);
+      this.showError('加载单词本失败');
+      return Promise.resolve();
+    }
+  }
+
+  renderWordList() {
+    this.wordListElement.innerHTML = '';
+    
+    if (this.words.length === 0) {
+      this.wordListElement.innerHTML = '<div class="empty">单词本为空</div>';
+      return;
+    }
+    
+    this.words.forEach((wordData, index) => {
+      const wordCard = document.createElement('div');
+      wordCard.className = 'word-card';
+      wordCard.dataset.word = wordData.word;
+      
+      wordCard.innerHTML = `
+        <span class="word-text">${wordData.word}</span>
+        ${wordData.phonetics ? `<span class="word-phonetics">/${wordData.phonetics}/</span>` : ''}
+        <div class="word-translation">${wordData.translation || '暂无翻译'}</div>
+        <div class="word-actions">
+          <button class="speak-btn" title="朗读">🔊</button>
+          <button class="edit-btn" title="编辑">✏️</button>
+          ${!wordData.word.includes(' ') ? `<button class="phonetic-btn" title="获取音标">🔤</button>` : ''}
+          <button class="delete-btn" title="删除">🗑️</button>
+        </div>
+      `;
+      
+      this.wordListElement.appendChild(wordCard);
+    });
+  }
+
+  setupEventListeners() {
+    // 搜索功能
+    this.searchInput.addEventListener('input', this.handleSearch.bind(this));
+    
+    // 删除单词
+    this.wordListElement.addEventListener('click', this.handleWordActions.bind(this));
+  }
+
+  handleSearch() {
+    const term = this.searchInput.value.toLowerCase().trim();
+    this.wordListElement.querySelectorAll('.word-card').forEach(card => {
+      const word = card.dataset.word.toLowerCase();
+      card.style.display = word.includes(term) ? '' : 'none';
+    });
+  }
+
+  handleWordActions(e) {
+    if (e.target.classList.contains('delete-btn')) {
+      this.handleDeleteWord(e);
+    } 
+    else if (e.target.classList.contains('edit-btn')) {
+      this.handleEditWord(e);
+    } else if (e.target.classList.contains('phonetic-btn')) {
+      this.handleGetPhonetic(e);
+    }
+  }
+
+  async handleDeleteWord(e) {
+    const card = e.target.closest('.word-card');
+    const word = card.dataset.word;
+    
+    if (!(await this.confirm(`确定要删除单词 "${word}" 吗？`))) return;
+    
+    try {
+      await new Promise((resolve) => {
+        chrome.runtime.sendMessage(
+          {type: 'delete_word', word},
+          () => {
+            if (chrome.runtime.lastError) {
+              console.error('删除单词失败:', chrome.runtime.lastError);
+              this.showError('删除单词失败');
+              return;
+            }
+            resolve();
+          }
+        );
+      });
+      
+      await this.loadWords();
+      this.renderWordList();
+    } catch (error) {
+      console.error('删除出错:', error);
+      this.showError('删除单词时出错');
+    }
+  }
+  
+  async handleGetPhonetic(e) {
+    const card = e.target.closest('.word-card');
+    const word = card.dataset.word;
+    
+    // 显示加载状态
+    const phoneticBtn = card.querySelector('.phonetic-btn');
+    const originalIcon = phoneticBtn.innerHTML;
+    phoneticBtn.innerHTML = '⏳';
+    phoneticBtn.disabled = true;
+    
+    try {
+      // 获取音标
+      const phoneticsData = await this.getPhonetics(word);
+      
+      if (phoneticsData.phoneticText) {
+        // 更新单词本中的音标
+        await new Promise((resolve) => {
+          chrome.runtime.sendMessage(
+            {
+              type: 'update_phonetic',
+              word,
+              phonetic: phoneticsData.phoneticText
+            },
+            (response) => {
+              if (chrome.runtime.lastError) {
+                console.error('更新音标失败:', chrome.runtime.lastError);
+              }
+              resolve();
+            }
+          );
+        });
+        
+        // 重新加载单词并渲染列表
+        await this.loadWords();
+        this.renderWordList();
+      }
+      // 没有音标时直接跳过，不显示任何提示
+    } catch (error) {
+      console.error('获取音标出错:', error);
+      // 出错时也不显示提示，直接跳过
+    } finally {
+      // 恢复按钮状态
+      phoneticBtn.innerHTML = originalIcon;
+      phoneticBtn.disabled = false;
+    }
+  }
+
+  handleEditWord(e) {
+    const card = e.target.closest('.word-card');
+    const word = card.dataset.word;
+    const translationDiv = card.querySelector('.word-translation');
+    
+    const originalText = translationDiv.textContent;
+    translationDiv.innerHTML = `
+      <textarea class="edit-area">${originalText}</textarea>
+      <div class="edit-actions">
+        <button class="save-edit-btn">保存</button>
+        <button class="cancel-edit-btn">取消</button>
+      </div>
+    `;
+    
+    const textarea = translationDiv.querySelector('.edit-area');
+    textarea.focus();
+    
+    translationDiv.querySelector('.save-edit-btn').addEventListener('click', () => {
+      this.saveWordEdit(word, textarea.value.trim(), card);
+    });
+    
+    translationDiv.querySelector('.cancel-edit-btn').addEventListener('click', () => {
+      translationDiv.textContent = originalText;
+    });
+  }
+
+  async saveWordEdit(word, newTranslation, card) {
+    if (!newTranslation) {
+      await this.alert('翻译内容不能为空');
+      return;
+    }
+    
+    try {
+      await new Promise((resolve) => {
+        chrome.runtime.sendMessage(
+          {
+            type: 'update_translation',
+            word,
+            translation: newTranslation
+          },
+          () => {
+            if (chrome.runtime.lastError) {
+              console.error('更新翻译失败:', chrome.runtime.lastError);
+              this.showError('保存翻译失败');
+              return;
+            }
+            resolve();
+          }
+        );
+      });
+      
+      await this.loadWords();
+      this.renderWordList();
+    } catch (error) {
+      console.error('保存翻译出错:', error);
+      this.showError('保存翻译时出错');
+    }
+  }
+}
+
+// 初始化单词本
+document.addEventListener('DOMContentLoaded', () => {
+  const wordBook = new WordBook();
+  
+  // 监听存储变化，实时更新单词本
+  chrome.storage.onChanged.addListener((changes, namespace) => {
+    if (namespace === 'local' && changes.word_dictionary) {
+      wordBook.loadWords().then(() => {
+        wordBook.renderWordList();
+      });
+    }
+  });
+  
+  // 添加全局朗读点击处理
+  document.addEventListener('click', (e) => {
+    if (e.target.classList.contains('speak-btn')) {
+      const word = e.target.closest('.word-card').dataset.word;
+      wordBook.speakWord(word);
+    }
+  });
+});
