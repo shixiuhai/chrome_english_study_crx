@@ -41,21 +41,37 @@
         <button id="deleteBtn">🗑️ 删除</button>
       </div>
       
-      <!-- 高级配置 -->
-      <div class="advanced-config-section">
-        <div class="advanced-config-header">
-          <h3>⚙️ 高级配置</h3>
+      <!-- 复习设置 -->
+      <div class="settings-section review-settings">
+        <h3>📝 复习设置</h3>
+        <div class="settings-content">
+          <div class="setting-item">
+            <h4>复习模式</h4>
+            <div class="review-mode-buttons">
+              <button class="review-mode-btn" data-mode="standard" data-desc="基于记忆强度排序，优先复习记忆薄弱的单词">标准模式</button>
+              <button class="review-mode-btn" data-mode="random" data-desc="完全随机选择单词，增加学习趣味性">随机模式</button>
+              <button class="review-mode-btn" data-mode="mixed" data-desc="新单词和旧单词交替出现，平衡复习重点">新旧交替</button>
+              <button class="review-mode-btn" data-mode="difficult" data-desc="优先复习错误率高的单词，强化薄弱环节">重点突破</button>
+            </div>
+            <div class="review-mode-desc">
+              <p id="reviewModeDesc">基于记忆强度排序，优先复习记忆薄弱的单词</p>
+            </div>
+          </div>
         </div>
-        <div class="advanced-config-content">
-          <!-- 域名排除功能 -->
-          <div class="domain-exclusion">
+      </div>
+      
+      <!-- 域名设置 -->
+      <div class="settings-section domain-settings">
+        <h3>🌐 域名设置</h3>
+        <div class="settings-content">
+          <div class="setting-item">
             <div class="current-domain">
               <span>当前域名：</span>
               <span id="currentDomain"></span>
               <button id="excludeDomainBtn">排除当前域名</button>
             </div>
             <div class="excluded-domains">
-              <h3>已排除域名</h3>
+              <h4>已排除域名</h4>
               <div id="excludedDomainsList" class="excluded-list"></div>
             </div>
           </div>

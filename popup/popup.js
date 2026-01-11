@@ -2,6 +2,7 @@ class WordBookConfig {
   constructor() {
     this.userId = '';
     this.currentDomain = '';
+    this.reviewMode = 'standard'; // 默认复习模式
     
     this.init();
     this.initDialog();
@@ -127,16 +128,46 @@ class WordBookConfig {
     chrome.tabs.create({ url: wordbookUrl });
   }
 
-  // 加载用户ID
+  // 加载用户ID和复习模式
   async loadUserId() {
     return new Promise((resolve) => {
-      chrome.storage.local.get(['userId', 'lastSyncTimestamp'], (result) => {
+      chrome.storage.local.get(['userId', 'lastSyncTimestamp', 'reviewMode'], (result) => {
         this.userId = result.userId || '';
+        this.reviewMode = result.reviewMode || 'standard';
         document.getElementById('userIdInput').value = this.userId;
+        
+        // 更新复习模式选择UI
+        this.updateReviewModeUI();
+        
         this.updateUserIdUI(); // 新增：更新UI状态
         resolve();
       });
     });
+  }
+  
+  // 更新复习模式选择UI
+  updateReviewModeUI() {
+    const buttons = document.querySelectorAll('.review-mode-btn');
+    buttons.forEach(btn => {
+      btn.classList.remove('active');
+      if (btn.dataset.mode === this.reviewMode) {
+        btn.classList.add('active');
+        // 更新模式描述
+        const desc = document.getElementById('reviewModeDesc');
+        if (desc) {
+          desc.textContent = btn.dataset.desc;
+        }
+      }
+    });
+  }
+  
+  // 保存复习模式
+  async saveReviewMode(mode) {
+    this.reviewMode = mode;
+    await chrome.storage.local.set({ reviewMode: mode });
+    // 更新UI
+    this.updateReviewModeUI();
+    this.alert('复习模式保存成功');
   }
 
   // 保存用户ID
@@ -230,6 +261,14 @@ class WordBookConfig {
     // 删除远程单词本
     document.getElementById('deleteBtn').addEventListener('click', async () => {
       await this.deleteRemoteWordbook();
+    });
+    
+    // 复习模式按钮组事件监听
+    const reviewModeButtons = document.querySelectorAll('.review-mode-btn');
+    reviewModeButtons.forEach(btn => {
+      btn.addEventListener('click', async () => {
+        await this.saveReviewMode(btn.dataset.mode);
+      });
     });
   }
 

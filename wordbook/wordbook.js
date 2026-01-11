@@ -527,8 +527,13 @@ class WordBook {
       // 显示复习选项对话框
       this.showReviewOptionsDialog(session);
     } else {
-      // 没有有效会话，直接生成新的复习单词
-      this.generateNewReview();
+      // 没有有效会话，获取保存的复习模式，然后生成新的复习单词
+      const savedMode = await new Promise((resolve) => {
+        chrome.storage.local.get(['reviewMode'], (result) => {
+          resolve(result.reviewMode || 'standard');
+        });
+      });
+      this.generateNewReview(savedMode);
     }
   }
   
@@ -568,10 +573,16 @@ class WordBook {
     const newBtn = document.createElement('button');
     newBtn.className = 'dialog-btn dialog-btn-secondary';
     newBtn.textContent = '重新生成复习单词';
-    newBtn.addEventListener('click', () => {
+    newBtn.addEventListener('click', async () => {
       this.hideDialog();
       this.clearReviewSession();
-      this.generateNewReview();
+      // 获取保存的复习模式
+      const savedMode = await new Promise((resolve) => {
+        chrome.storage.local.get(['reviewMode'], (result) => {
+          resolve(result.reviewMode || 'standard');
+        });
+      });
+      this.generateNewReview(savedMode);
     });
     dialogFooter.appendChild(newBtn);
     
@@ -734,9 +745,13 @@ class WordBook {
       if (tooltipElement) {
         tooltipElement.classList.remove('show');
       }
-      // 取消当前请求
+      // 取消当前请求，确保即使controller不存在也不会出错
       if (currentAbortController) {
-        currentAbortController.abort();
+        try {
+          currentAbortController.abort();
+        } catch (error) {
+          console.debug('取消请求失败:', error);
+        }
         currentAbortController = null;
       }
     };
@@ -747,6 +762,10 @@ class WordBook {
         // 从当前单词列表中查找单词意思
         const foundWord = this.words.find(w => w.word.toLowerCase() === word.toLowerCase());
         if (foundWord) {
+          // 检查是否已被取消
+          if (controller.signal.aborted) {
+            throw new Error('Request aborted');
+          }
           return foundWord.translation || '暂无翻译';
         }
         
@@ -758,14 +777,18 @@ class WordBook {
         // 调用划词翻译接口（不保存到单词本）
         return await new Promise((resolve, reject) => {
           // 监听取消信号
-          controller.signal.addEventListener('abort', () => {
+          const abortListener = () => {
             reject(new Error('Request aborted'));
-          });
+          };
+          controller.signal.addEventListener('abort', abortListener);
           
           // 发送翻译请求，使用translate_no_save类型避免自动保存
           chrome.runtime.sendMessage(
             {type: 'translate_no_save', word}, 
             (response) => {
+              // 移除取消监听，避免内存泄漏
+              controller.signal.removeEventListener('abort', abortListener);
+              
               // 检查是否已被取消
               if (controller.signal.aborted) {
                 return;
@@ -793,6 +816,9 @@ class WordBook {
       const word = e.target.textContent.trim();
       if (!word) return;
       
+      // 首先取消可能存在的旧请求，避免资源浪费
+      hideTooltip();
+      
       // 显示加载状态
       showTooltip(e.target, word, '加载中...');
       
@@ -810,6 +836,8 @@ class WordBook {
       } catch (error) {
         // 如果是取消错误，不做处理
         if (error.name !== 'AbortError' && error.message !== 'Request aborted') {
+          // 再次检查是否已被取消，防止竞态条件
+          if (controller.signal.aborted) return;
           showTooltip(e.target, word, '获取失败');
         }
       }
