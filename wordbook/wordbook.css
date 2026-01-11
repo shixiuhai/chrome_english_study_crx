@@ -610,14 +610,16 @@ body {
 
 .edit-area {
   width: 100%;
-  padding: 10px;
+  padding: 8px 12px;
   border: 2px solid var(--primary-color);
   border-radius: var(--radius-sm);
-  font-size: 14px;
+  font-size: 13px;
   resize: vertical;
-  min-height: 80px;
+  min-height: 40px;
+  max-height: 120px;
   outline: none;
   font-family: inherit;
+  box-sizing: border-box;
 }
 
 .edit-area:focus {
@@ -629,16 +631,34 @@ body {
   gap: 8px;
   margin-top: var(--spacing-sm);
   opacity: 1;
+  justify-content: center;
+  width: 100%;
+  box-sizing: border-box;
+  padding: 0 12px 8px;
 }
 
 .save-edit-btn, .cancel-edit-btn {
   padding: 6px 12px;
   border: none;
-  border-radius: var(--radius-sm);
+  border-radius: 16px;
   font-size: 12px;
   font-weight: 600;
   cursor: pointer;
   transition: all 0.2s ease;
+  height: auto;
+  min-height: 28px;
+  max-height: 36px;
+  line-height: 1.4;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  flex-shrink: 0;
+  max-width: 80px;
+  flex: 1;
+  min-width: 60px;
 }
 
 .save-edit-btn {
@@ -648,15 +668,18 @@ body {
 
 .save-edit-btn:hover {
   background: var(--primary-dark);
+  transform: translateY(-1px);
 }
 
 .cancel-edit-btn {
   background: var(--bg-light);
   color: var(--text-color);
+  border: 1px solid var(--border-color);
 }
 
 .cancel-edit-btn:hover {
   background: #e2e8f0;
+  transform: translateY(-1px);
 }
 
 /* 自定义对话框样式 */
