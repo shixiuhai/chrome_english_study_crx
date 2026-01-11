@@ -485,8 +485,17 @@ class WordBookConfig {
     try {
       // 设置超时控制，避免请求卡住
       const controller = new AbortController();
-      // 使用配置文件中的超时时间，默认10秒
-      const timeout = CONFIG?.REQUEST_CONFIG?.TIMEOUT || 10000;
+      
+      // 根据不同请求类型设置不同超时时间
+      let timeout;
+      if (action === 'download' || action === 'upload') {
+        // 同步接口（拉取和上传）使用更长的超时时间
+        timeout = CONFIG?.REQUEST_CONFIG?.SYNC_TIMEOUT || 15000;
+      } else {
+        // 其他接口使用默认超时时间
+        timeout = CONFIG?.REQUEST_CONFIG?.TIMEOUT || 2000;
+      }
+      
       const timeoutId = setTimeout(() => controller.abort(), timeout);
       
       const response = await fetch(url, {

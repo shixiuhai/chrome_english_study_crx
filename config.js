@@ -16,7 +16,8 @@ const configData = {
   // API请求配置
   REQUEST_CONFIG: {
     TIMEOUT: 2000, // 2秒超时
-    MAX_RETRIES: 3 // 最大重试次数
+    MAX_RETRIES: 3, // 最大重试次数
+    SYNC_TIMEOUT: 15000 // 同步接口15秒超时（拉取和同步）
   },
   
   // 单词数量限制
