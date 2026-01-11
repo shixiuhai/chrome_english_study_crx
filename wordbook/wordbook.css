@@ -354,7 +354,7 @@ body {
   flex-direction: column;
   gap: 12px;
   position: relative;
-  overflow: hidden;
+  overflow: visible;
   min-height: 200px;
   min-width: 280px;
   height: auto;
@@ -593,10 +593,10 @@ body {
   align-items: center;
   flex-shrink: 0;
   padding-top: 8px;
+  padding-bottom: 4px;
   border-top: 1px solid #f1f5f9;
   width: 100%;
   box-sizing: border-box;
-  margin-bottom: -4px;
 }
 
 .word-card:hover .word-actions {
