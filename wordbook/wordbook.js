@@ -140,6 +140,7 @@ class WordBook {
       await this.loadWords();
       this.renderWordList();
       this.setupEventListeners();
+      this.setupReviewButton();
     } catch (error) {
       console.error('初始化失败:', error);
       // 确保在初始化失败时也能显示错误信息并结束加载状态
@@ -293,6 +294,9 @@ class WordBook {
           <button class="edit-btn" title="编辑">✏️</button>
           ${!wordData.word.includes(' ') ? `<button class="phonetic-btn" title="获取音标">🔤</button>` : ''}
           <button class="delete-btn" title="删除">🗑️</button>
+        </div>
+        <div class="word-review-count">
+          <small>复习 ${wordData.reviewed || 0} 次</small>
         </div>
       `;
       
@@ -493,6 +497,279 @@ class WordBook {
     } catch (error) {
       console.error('保存翻译出错:', error);
       this.showError('保存翻译时出错');
+    }
+  }
+  
+  // 设置复习按钮
+  setupReviewButton() {
+    const reviewBtn = document.getElementById('reviewBtn');
+    if (reviewBtn) {
+      reviewBtn.addEventListener('click', () => this.handleReview());
+    }
+  }
+  
+  // 处理复习逻辑
+  async handleReview() {
+    if (this.words.length === 0) {
+      await this.alert('单词本为空，无法生成复习单词');
+      return;
+    }
+    
+    // 检查是否有有效的复习会话
+    const session = this.getReviewSession();
+    const isValidSession = this.isSessionValid(session);
+    
+    if (isValidSession) {
+      // 显示复习选项对话框
+      this.showReviewOptionsDialog(session);
+    } else {
+      // 没有有效会话，直接生成新的复习单词
+      this.generateNewReview();
+    }
+  }
+  
+  // 显示复习选项对话框
+  showReviewOptionsDialog(session) {
+    const sessionTimeStr = this.formatTimeDiff(session.createdAt);
+    
+    const dialogContent = document.getElementById('dialogBody');
+    const dialogFooter = document.getElementById('dialogFooter');
+    
+    // 设置对话框标题和内容
+    document.getElementById('dialogTitle').textContent = '复习选项';
+    dialogContent.innerHTML = `
+      <div class="review-options-content">
+        <div class="session-info">
+          <p>上次复习：${sessionTimeStr}</p>
+          <p>复习进度：${session.currentIndex + 1}/${session.words.length}</p>
+        </div>
+        <p>请选择复习方式：</p>
+      </div>
+    `;
+    
+    // 清空并设置按钮
+    dialogFooter.innerHTML = '';
+    
+    // 继续上一次复习按钮
+    const continueBtn = document.createElement('button');
+    continueBtn.className = 'dialog-btn dialog-btn-primary';
+    continueBtn.textContent = '继续上一次复习';
+    continueBtn.addEventListener('click', () => {
+      this.hideDialog();
+      this.showReviewDialog(session.words, session.currentIndex);
+    });
+    dialogFooter.appendChild(continueBtn);
+    
+    // 重新生成复习单词按钮
+    const newBtn = document.createElement('button');
+    newBtn.className = 'dialog-btn dialog-btn-secondary';
+    newBtn.textContent = '重新生成复习单词';
+    newBtn.addEventListener('click', () => {
+      this.hideDialog();
+      this.clearReviewSession();
+      this.generateNewReview();
+    });
+    dialogFooter.appendChild(newBtn);
+    
+    // 显示对话框
+    document.getElementById('customDialog').classList.add('dialog-show');
+    document.getElementById('dialogOverlay').classList.add('dialog-show');
+  }
+  
+  // 生成新的复习单词
+  generateNewReview() {
+    // 选择复习单词：基于复习次数和添加时间
+    const reviewWords = [...this.words]
+      .sort((a, b) => {
+        // 权重：复习次数占70%，添加时间占30%
+        const weightA = a.reviewed * 0.7 + (Date.now() - a.added) * 0.3 / 1000000;
+        const weightB = b.reviewed * 0.7 + (Date.now() - b.added) * 0.3 / 1000000;
+        return weightA - weightB;
+      })
+      .slice(0, 10);
+    
+    this.showReviewDialog(reviewWords);
+  }
+  
+  // 显示复习对话框
+  showReviewDialog(reviewWords, initialIndex = 0) {
+    let currentIndex = initialIndex;
+    
+    const dialogContent = document.getElementById('dialogBody');
+    const dialogFooter = document.getElementById('dialogFooter');
+    
+    // 渲染当前单词
+    const renderCurrentWord = async () => {
+      const wordData = reviewWords[currentIndex];
+      
+      // 更新对话框标题
+      document.getElementById('dialogTitle').textContent = `复习单词 (${currentIndex + 1}/${reviewWords.length})`;
+      
+      // 更新对话框内容
+      dialogContent.innerHTML = `
+        <div class="review-word-container">
+          <div class="review-word">${wordData.word}</div>
+          ${wordData.phonetics ? `<div class="review-phonetics">/${wordData.phonetics}/</div>` : ''}
+          <div class="review-translation">${wordData.translation || '暂无翻译'}</div>
+        </div>
+      `;
+      
+      // 更新复习次数
+      await this.incrementReviewCount(wordData.word);
+      
+      // 保存复习会话
+      this.saveReviewSession(reviewWords, currentIndex);
+    };
+    
+    // 初始化对话框
+    document.getElementById('dialogTitle').textContent = `复习单词 (${currentIndex + 1}/${reviewWords.length})`;
+    dialogFooter.innerHTML = '';
+    
+    // 添加导航按钮
+    const prevBtn = document.createElement('button');
+    prevBtn.className = 'dialog-btn dialog-btn-secondary';
+    prevBtn.textContent = '上一个';
+    prevBtn.disabled = currentIndex === 0;
+    prevBtn.addEventListener('click', async () => {
+      if (currentIndex > 0) {
+        currentIndex--;
+        await renderCurrentWord();
+        prevBtn.disabled = currentIndex === 0;
+        nextBtn.disabled = false;
+      }
+    });
+    
+    const nextBtn = document.createElement('button');
+    nextBtn.className = 'dialog-btn dialog-btn-primary';
+    nextBtn.textContent = '下一个';
+    nextBtn.disabled = currentIndex === reviewWords.length - 1;
+    nextBtn.addEventListener('click', async () => {
+      if (currentIndex < reviewWords.length - 1) {
+        currentIndex++;
+        await renderCurrentWord();
+        prevBtn.disabled = false;
+        nextBtn.disabled = currentIndex === reviewWords.length - 1;
+      } else {
+        // 复习完成，清除会话
+        this.clearReviewSession();
+        this.hideDialog();
+        await this.loadWords();
+        this.renderWordList();
+        await this.alert('复习完成！');
+      }
+    });
+    
+    const exitBtn = document.createElement('button');
+    exitBtn.className = 'dialog-btn dialog-btn-secondary';
+    exitBtn.textContent = '退出复习';
+    exitBtn.addEventListener('click', async () => {
+      this.hideDialog();
+      // 退出时保存会话
+      this.saveReviewSession(reviewWords, currentIndex);
+      await this.loadWords();
+      this.renderWordList();
+      await this.alert('复习已保存，下次可以继续！');
+    });
+    
+    dialogFooter.appendChild(exitBtn);
+    dialogFooter.appendChild(prevBtn);
+    dialogFooter.appendChild(nextBtn);
+    
+    // 渲染当前单词
+    renderCurrentWord();
+    
+    // 显示对话框
+    document.getElementById('customDialog').classList.add('dialog-show');
+    document.getElementById('dialogOverlay').classList.add('dialog-show');
+    
+    // 添加键盘导航
+    const handleKeyDown = async (e) => {
+      if (e.key === 'ArrowLeft' && currentIndex > 0) {
+        currentIndex--;
+        await renderCurrentWord();
+        prevBtn.disabled = currentIndex === 0;
+        nextBtn.disabled = false;
+      } else if (e.key === 'ArrowRight' && currentIndex < reviewWords.length - 1) {
+        currentIndex++;
+        await renderCurrentWord();
+        prevBtn.disabled = false;
+        nextBtn.disabled = currentIndex === reviewWords.length - 1;
+      }
+    };
+    
+    document.addEventListener('keydown', handleKeyDown);
+    
+    // 保存事件监听器，以便在关闭对话框时移除
+    this.currentReviewKeydownListener = handleKeyDown;
+  }
+  
+  // 隐藏自定义对话框（重写添加清理逻辑）
+  hideDialog() {
+    document.getElementById('customDialog').classList.remove('dialog-show');
+    document.getElementById('dialogOverlay').classList.remove('dialog-show');
+    
+    // 移除键盘导航事件监听器
+    if (this.currentReviewKeydownListener) {
+      document.removeEventListener('keydown', this.currentReviewKeydownListener);
+      this.currentReviewKeydownListener = null;
+    }
+  }
+  
+  // 保存复习会话到localStorage
+  saveReviewSession(reviewWords, currentIndex) {
+    const session = {
+      words: reviewWords,
+      currentIndex,
+      createdAt: Date.now()
+    };
+    localStorage.setItem('reviewSession', JSON.stringify(session));
+  }
+  
+  // 从localStorage获取复习会话
+  getReviewSession() {
+    const sessionStr = localStorage.getItem('reviewSession');
+    if (!sessionStr) return null;
+    
+    try {
+      const session = JSON.parse(sessionStr);
+      return session;
+    } catch (error) {
+      console.error('解析复习会话失败:', error);
+      this.clearReviewSession();
+      return null;
+    }
+  }
+  
+  // 清除复习会话
+  clearReviewSession() {
+    localStorage.removeItem('reviewSession');
+  }
+  
+  // 检查会话是否有效（24小时内有效）
+  isSessionValid(session) {
+    if (!session) return false;
+    const now = Date.now();
+    const sessionTime = session.createdAt;
+    const sessionAge = now - sessionTime;
+    // 24小时内有效
+    return sessionAge < 24 * 60 * 60 * 1000;
+  }
+  
+  // 格式化时间差
+  formatTimeDiff(timestamp) {
+    const now = Date.now();
+    const diff = now - timestamp;
+    
+    const minutes = Math.floor(diff / (1000 * 60));
+    const hours = Math.floor(diff / (1000 * 60 * 60));
+    const days = Math.floor(diff / (1000 * 60 * 60 * 24));
+    
+    if (minutes < 60) {
+      return `${minutes}分钟前`;
+    } else if (hours < 24) {
+      return `${hours}小时前`;
+    } else {
+      return `${days}天前`;
     }
   }
 }
