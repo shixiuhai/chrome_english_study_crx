@@ -55,15 +55,18 @@ function findAllMatches(text, regex) {
 class WordMarker {
   constructor() {
     this.markedWords = new Map();
-    this.maxMarkedWords = window.CONFIG?.MAX_MARKED_WORDS || 1000; // 使用配置文件中的最大标记数量
+    this.maxMarkedWords = window.CONFIG?.MAX_MARKED_WORDS || 1000;
     this.translationQueue = [];
     this.currentTranslations = 0;
-    this.maxTranslations = 3; // 减少最大同时翻译数量，降低性能压力
-    this.isContextValid = true; // 扩展上下文有效性标志
+    this.maxTranslations = 3;
+    this.isContextValid = true;
+    this.initPageMarksPromise = null;
+    this.initPageMarksCompleted = false;
+    this.pendingSelection = null;
     this.init();
     this.checkDomain().then(isAllowed => {
       if (this.isContextValid && isAllowed) {
-        this.initPageMarks(); // 新增初始化调用
+        this.initPageMarksAsync();
       }
     }).catch(error => {
       if (error.message.includes('Extension context invalidated')) {
@@ -140,30 +143,24 @@ class WordMarker {
       const selection = window.getSelection();
       const selectedText = selection.toString();
       
-      // 清除之前的定时器
       if (this.markTimeout) {
         clearTimeout(this.markTimeout);
         this.markTimeout = null;
       }
       
-      // 跳过Ctrl键的选中（包括Ctrl+A）
       if (selectedText && !event.ctrlKey) {
-        // 检查是否是全选(Ctrl+A)的情况
         const range = selection.getRangeAt(0);
         const container = range.commonAncestorContainer;
         
-        // 如果选区包含整个body/document或是过大范围
         if (container === document.body || container === document.documentElement ||
             range.toString().length > 10000) {
           return;
         }
         
-        // 新增：检查是否包含中文，防止误选中文添加到英文单词表
         if (this.hasChinese(selectedText)) {
           return;
         }
         
-        // 新增：检查是否是URL
         if (this.isUrl(selectedText)) {
           return;
         }
@@ -181,16 +178,13 @@ class WordMarker {
           return;
         }
         
-        // 优化选区调整逻辑，排除前后空格
         const text = range.toString();
         const leadingSpaces = text.match(/^\s*/)[0].length;
         const trailingSpaces = text.match(/\s*$/)[0].length;
         
-        // 计算新的偏移量
         let newStartOffset = range.startOffset + leadingSpaces;
         let newEndOffset = range.endOffset - trailingSpaces;
         
-        // 简化有效性验证
         if (range.startContainer.nodeType === Node.TEXT_NODE) {
           newStartOffset = Math.min(newStartOffset, range.startContainer.length);
         }
@@ -198,16 +192,13 @@ class WordMarker {
           newEndOffset = Math.min(newEndOffset, range.endContainer.length);
         }
         
-        // 确保偏移量有效
         newStartOffset = Math.max(0, newStartOffset);
         newEndOffset = Math.max(0, newEndOffset);
         
-        // 如果是同一容器，确保endOffset不小于startOffset
         if (range.startContainer === range.endContainer) {
           newEndOffset = Math.max(newStartOffset, newEndOffset);
         }
         
-        // 更新选区
         const newRange = document.createRange();
         try {
           newRange.setStart(range.startContainer, newStartOffset);
@@ -216,19 +207,16 @@ class WordMarker {
           selection.addRange(newRange);
         } catch (e) {
           console.error('调整选区失败:', e);
-          // 失败时使用原始选区
           selection.removeAllRanges();
           selection.addRange(range);
         }
         
         if (markCheck(trimmedText)) {
-          // 保存待处理的数据
           this.pendingMarkData = {
             selection: window.getSelection(),
             text: trimmedText
           };
           
-          // 添加300ms延迟确认机制
           this.markTimeout = setTimeout(() => {
             if (this.pendingMarkData) {
               this.markWord(this.pendingMarkData.selection, this.pendingMarkData.text);
@@ -236,12 +224,29 @@ class WordMarker {
             }
           }, 300);
         }
+      } else if (event.ctrlKey && (event.key === 'a' || event.key === 'c')) {
+        if (this.markTimeout) {
+          clearTimeout(this.markTimeout);
+          this.markTimeout = null;
+        }
+        if (this.pendingMarkData) {
+          this.pendingMarkData = null;
+        }
       }
     });
     
-    // 添加ESC键取消标记功能
     document.addEventListener('keydown', (event) => {
       if (event.key === 'Escape') {
+        if (this.markTimeout) {
+          clearTimeout(this.markTimeout);
+          this.markTimeout = null;
+        }
+        if (this.pendingMarkData) {
+          this.pendingMarkData = null;
+        }
+      }
+      
+      if (event.ctrlKey && (event.key === 'a' || event.key === 'c')) {
         if (this.markTimeout) {
           clearTimeout(this.markTimeout);
           this.markTimeout = null;
@@ -253,76 +258,93 @@ class WordMarker {
     });
   }
 
-  // 新增方法：初始化页面标记（优化版）
-  async initPageMarks() {
-    // 检查扩展上下文是否有效
-    if (!this.isContextValid) {
-      console.log('扩展上下文已销毁，跳过页面标记初始化');
-      return;
+  // 新增方法：异步初始化页面标记（优化版）
+  async initPageMarksAsync() {
+    if (this.initPageMarksPromise) {
+      return this.initPageMarksPromise;
     }
-    
-    try {
-      const marks = await this.getMarks();
-      if (!marks || Object.keys(marks).length === 0) return;
 
-      // 获取所有标记值
-      const markValues = Object.values(marks);
-      
-      // 提取单词列表
-      const wordList = markValues.map(m => m.text).filter(text => text && text.trim());
-      if (wordList.length === 0) return;
-      
-      const regex = buildMultiPatternRegex(wordList);
+    this.initPageMarksPromise = (async () => {
+      try {
+        await new Promise(resolve => {
+          if (document.readyState === 'complete') {
+            resolve();
+          } else {
+            window.addEventListener('load', resolve, { once: true });
+          }
+        });
 
-      const walker = document.createTreeWalker(
-        document.body,
-        NodeFilter.SHOW_TEXT,
-        null,
-        false
-      );
+        await new Promise(resolve => setTimeout(resolve, 500));
 
-      const textNodes = [];
-      let node;
-      let nodeCount = 0;
-      
-      while ((node = walker.nextNode()) && nodeCount < (window.CONFIG?.MAX_TEXT_NODES || 2000)) { // 使用配置文件中的最大文本节点数量
-        const parent = node.parentNode;
-        if (parent.nodeName === 'SCRIPT' || parent.nodeName === 'STYLE' || parent.nodeName === 'NOSCRIPT') {
-          continue;
+        const marks = await this.getMarks();
+        if (!marks || Object.keys(marks).length === 0) {
+          this.initPageMarksCompleted = true;
+          return;
         }
-        // 跳过已处理的节点
-        if (parent.classList?.contains('word-mark')) continue;
-        
-        // 跳过空文本节点
-        if (!node.nodeValue || !node.nodeValue.trim()) continue;
-        
-        textNodes.push(node);
-        nodeCount++;
-      }
 
-      // 创建标记映射，提高查找效率
-      const marksMap = {};
-      markValues.forEach(mark => {
-        marksMap[mark.text.toLowerCase()] = mark;
-      });
+        const markValues = Object.values(marks);
+        const wordList = markValues.map(m => m.text).filter(text => text && text.trim());
+        if (wordList.length === 0) {
+          this.initPageMarksCompleted = true;
+          return;
+        }
 
-      // 分批处理，每批处理 100 个节点
-      const BATCH_SIZE = 100;
-      for (let i = 0; i < textNodes.length; i += BATCH_SIZE) {
-        const batch = textNodes.slice(i, i + BATCH_SIZE);
-        this.processTextNodesBatch(batch, regex, marksMap);
-        // 让出主线程
-        await new Promise(resolve => setTimeout(resolve, 0));
+        const regex = buildMultiPatternRegex(wordList);
+
+        const walker = document.createTreeWalker(
+          document.body,
+          NodeFilter.SHOW_TEXT,
+          {
+            acceptNode: (node) => {
+              const parent = node.parentNode;
+              if (parent.nodeName === 'SCRIPT' || parent.nodeName === 'STYLE' || 
+                  parent.nodeName === 'NOSCRIPT' || parent.classList?.contains('word-mark')) {
+                return NodeFilter.FILTER_REJECT;
+              }
+              if (!node.nodeValue || !node.nodeValue.trim()) {
+                return NodeFilter.FILTER_REJECT;
+              }
+              return NodeFilter.FILTER_ACCEPT;
+            }
+          },
+          false
+        );
+
+        const textNodes = [];
+        let node;
+        let nodeCount = 0;
+        const MAX_NODES = 500;
+
+        while ((node = walker.nextNode()) && nodeCount < MAX_NODES) {
+          textNodes.push(node);
+          nodeCount++;
+        }
+
+        const marksMap = {};
+        markValues.forEach(mark => {
+          marksMap[mark.text.toLowerCase()] = mark;
+        });
+
+        const BATCH_SIZE = 50;
+        for (let i = 0; i < textNodes.length; i += BATCH_SIZE) {
+          const batch = textNodes.slice(i, i + BATCH_SIZE);
+          this.processTextNodesBatch(batch, regex, marksMap);
+          await new Promise(resolve => setTimeout(resolve, 0));
+        }
+
+        this.initPageMarksCompleted = true;
+      } catch (error) {
+        if (error.message.includes('Extension context invalidated')) {
+          this.isContextValid = false;
+          console.log('扩展上下文已销毁，跳过页面标记初始化');
+        } else {
+          console.error('初始化页面标记时出错:', error);
+        }
+        this.initPageMarksCompleted = true;
       }
-    } catch (error) {
-      // 处理扩展上下文被销毁的错误
-      if (error.message.includes('Extension context invalidated')) {
-        this.isContextValid = false;
-        console.log('扩展上下文已销毁，跳过页面标记初始化');
-      } else {
-        console.error('初始化页面标记时出错:', error);
-      }
-    }
+    })();
+
+    return this.initPageMarksPromise;
   }
 
   // 批量处理文本节点
@@ -723,21 +745,34 @@ class WordMarker {
   
   // 标记页面上其他相同的单词/词组（优化版）
   markOtherOccurrences(text, translation) {
-    // 使用requestAnimationFrame避免阻塞主线程
     requestAnimationFrame(() => {
-      // 进一步限制每个单词的最大标记数量，提高性能
-      const maxOccurrences = 5; // 每个单词最多标记5个其他出现
-      let occurrencesMarked = 0;
+      if (!this.initPageMarksCompleted) {
+        return;
+      }
       
-      // 进一步减少处理的文本节点数量
-      const maxNodesToProcess = 50; // 最多处理50个文本节点
+      const maxOccurrences = 3;
+      let occurrencesMarked = 0;
+      const maxNodesToProcess = 30;
       let nodesProcessed = 0;
       
-      // 使用TreeWalker遍历文本节点
       const walker = document.createTreeWalker(
         document.body,
         NodeFilter.SHOW_TEXT,
-        null,
+        {
+          acceptNode: (node) => {
+            const parent = node.parentNode;
+            if (parent.nodeName === 'SCRIPT' || 
+                parent.nodeName === 'STYLE' || 
+                parent.nodeName === 'NOSCRIPT' ||
+                parent.classList?.contains('word-mark')) {
+              return NodeFilter.FILTER_REJECT;
+            }
+            if (!node.nodeValue || !node.nodeValue.includes(text)) {
+              return NodeFilter.FILTER_REJECT;
+            }
+            return NodeFilter.FILTER_ACCEPT;
+          }
+        },
         false
       );
       
@@ -745,55 +780,35 @@ class WordMarker {
       while ((node = walker.nextNode()) && nodesProcessed < maxNodesToProcess && occurrencesMarked < maxOccurrences) {
         nodesProcessed++;
         
-        // 跳过不需要处理的节点
-        if (node.parentNode.nodeName === 'SCRIPT' || 
-            node.parentNode.nodeName === 'STYLE' || 
-            node.parentNode.nodeName === 'NOSCRIPT' ||
-            node.parentNode.classList?.contains('word-mark')) {
-          continue;
-        }
-        
         const nodeText = node.nodeValue;
-        if (!nodeText || !nodeText.includes(text)) {
-          continue; // 快速跳过不包含目标文本的节点
-        }
-        
         const matches = [];
         const regex = new RegExp(escapeRegExp(text), 'gi');
         let match;
         
-        // 1. 先收集所有匹配，不修改DOM
         regex.lastIndex = 0;
         while ((match = regex.exec(nodeText)) !== null && occurrencesMarked < maxOccurrences) {
-          // 检查匹配是否有效
           if (match.index + text.length <= nodeText.length) {
             matches.push({...match});
             occurrencesMarked++;
           }
           
-          // 避免无限循环（零长度匹配）
           if (regex.lastIndex === match.index) {
             regex.lastIndex++;
           }
         }
         
-        // 2. 按位置降序处理匹配（从后往前），避免DOM修改影响后续匹配
         matches.sort((a, b) => b.index - a.index);
         
-        // 3. 遍历处理所有匹配
         for (const match of matches) {
           try {
-            // 再次检查节点是否仍然有效
             if (!node.parentNode) {
               continue;
             }
             
-            // 检查索引是否有效
             if (match.index < 0 || match.index + text.length > node.nodeValue.length) {
               continue;
             }
             
-            // 创建范围标记
             const range = document.createRange();
             range.setStart(node, match.index);
             range.setEnd(node, match.index + text.length);
@@ -801,18 +816,15 @@ class WordMarker {
             const markId = `mark_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
             const originalContent = range.cloneContents();
             
-            // 直接使用翻译结果创建标记
             this.createMarkElement(range, text, translation, markId, originalContent);
             this.markedWords.set(markId, {
               text,
               translation,
               originalContent
             });
-            // 批量保存，减少存储操作
             this.saveMark({id: markId, text, translation});
           } catch (error) {
             console.warn('标记单词时出错:', error.message);
-            // 跳过错误，继续处理其他匹配
             continue;
           }
         }

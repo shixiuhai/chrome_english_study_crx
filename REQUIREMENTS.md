@@ -11,7 +11,7 @@
    - 支持音标显示(英式/美式发音)
    - 先划线后翻译，提升用户体验
    - 300ms延迟确认机制，避免误操作
-   - 支持ESC键取消标记
+   - 支持ESC键、Ctrl+A和Ctrl+C取消标记
    - 划词时不再自动获取音标，提高划词速度
 
 2. **自动标记**
@@ -70,25 +70,33 @@
 ### content.js 主要功能
 - 实现WordMarker类负责内容标记
 - 包含以下核心方法：
-  - `initPageMarks()`: 初始化页面标记
+  - `initPageMarksAsync()`: 异步初始化页面标记，等待页面完全加载后处理，避免标记闪烁
   - `setupMutationObserver()`: 监听动态内容
   - `processTextNode()`: 处理文本节点
   - `markExistingWord()`: 标记现有单词
   - `getMarks()`: 获取存储的标记
-  - 新增`isUrl()`: 检测URL文本
-  - `init()`: 初始化事件监听，包含300ms延迟确认和ESC键取消功能
+  - `isUrl()`: 检测URL文本
+  - `hasChinese()`: 检测中文文本
+  - `init()`: 初始化事件监听，包含300ms延迟确认和ESC键、Ctrl+A、Ctrl+C取消功能
   - `markWord()`: 标记单词，支持延迟确认机制
   - `markOtherOccurrences()`: 优化版标记其他出现，使用requestAnimationFrame避免阻塞主线程
   - 优化的选区调整逻辑，简化代码结构
   - 防抖机制，避免频繁操作
+  - 使用acceptNode函数在TreeWalker中直接过滤无效节点，提高遍历效率
 
 ### 性能优化
+- 异步初始化标记，等待页面完全加载后处理，避免DOM不稳定导致的标记闪烁
+- 页面加载完成500ms后再处理标记，确保DOM完全稳定
 - 优化了markOtherOccurrences方法，减少处理节点数量和标记数量
 - 使用requestAnimationFrame避免阻塞主线程
 - 防抖机制，避免频繁操作
 - 简化选区调整逻辑，提高执行效率
-- 限制每个单词的最大标记数量为5个
-- 限制处理的文本节点数量为50个
+- 限制每个单词的最大标记数量为3个（从5个减少）
+- 限制markOtherOccurrences处理的节点数为30个（从50个减少）
+- 限制最大文本节点处理数量为500个（从2000个减少）
+- 批量处理大小调整为50个（从100个减少）
+- 使用acceptNode函数在TreeWalker中直接过滤无效节点，提高遍历效率
+- 先划线后翻译，提升用户体验
 
 ### background.js 主要功能
 - 数据存储管理(Chrome storage API)
