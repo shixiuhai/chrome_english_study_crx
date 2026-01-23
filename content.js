@@ -381,6 +381,52 @@ class WordMarker {
         }
       }
     });
+
+    document.addEventListener('copy', (event) => {
+      const selection = window.getSelection();
+      const selectedText = selection.toString().trim();
+      
+      if (this.markTimeout) {
+        clearTimeout(this.markTimeout);
+        this.markTimeout = null;
+      }
+      if (this.pendingMarkData) {
+        this.pendingMarkData = null;
+      }
+      
+      if (selectedText) {
+        const range = selection.getRangeAt(0);
+        const container = range.commonAncestorContainer;
+        
+        let parentElement = container.nodeType === Node.TEXT_NODE ? container.parentNode : container;
+        
+        let foundMarkElement = null;
+        
+        let current = parentElement;
+        while (current && current !== document.body) {
+          if (current.classList && current.classList.contains('word-mark')) {
+            foundMarkElement = current;
+            break;
+          }
+          current = current.parentNode;
+        }
+        
+        if (foundMarkElement) {
+          const markId = foundMarkElement.dataset.markId;
+          if (markId) {
+            this.removeMark(markId);
+          }
+        } else {
+          const trimmedText = selectedText.trim();
+          for (const [id, data] of this.markedWords.entries()) {
+            if (data.text === trimmedText) {
+              this.removeAllMarksForWord(trimmedText);
+              break;
+            }
+          }
+        }
+      }
+    });
   }
 
   // 新增方法：异步初始化页面标记（优化版）
