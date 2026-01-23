@@ -335,10 +335,14 @@ class WordBookConfig {
         };
       });
 
-      // 6. 调用上传API
+      // 6. 获取排除域名列表
+      const excludedDomains = await this.getExcludedDomains();
+
+      // 7. 调用上传API，同时上传单词本和排除域名
       const uploadResponse = await this.callSyncAPI('upload', {
         userId: this.userId,
-        wordbook
+        wordbook,
+        excludedDomains
       });
 
       if (uploadResponse.success) {
@@ -417,6 +421,12 @@ class WordBookConfig {
         await new Promise((resolve) => {
           chrome.storage.local.set({ lastSyncTimestamp: response.timestamp }, resolve);
         });
+
+        // 如果服务器返回了排除域名，则更新本地排除域名
+        if (response.excludedDomains && Array.isArray(response.excludedDomains)) {
+          await this.saveExcludedDomains(response.excludedDomains);
+          this.renderExcludedDomains(response.excludedDomains);
+        }
 
         await this.alert(`单词本拉取成功，共 ${wordbook.length} 个单词`);
       } else {
