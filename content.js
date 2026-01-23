@@ -135,17 +135,28 @@ class WordMarker {
       let hasNewContent = false;
       
       for (const mutation of mutations) {
-        if (mutation.type === 'childList' && mutation.addedNodes.length > 0) {
-          // 检查是否有新增的文本节点
-          for (const node of mutation.addedNodes) {
-            if (node.nodeType === Node.TEXT_NODE || (node.nodeType === Node.ELEMENT_NODE && node.textContent)) {
-              hasNewContent = true;
-              break;
+          if (mutation.type === 'childList' && mutation.addedNodes.length > 0) {
+            // 检查是否有新增的文本节点
+            for (const node of mutation.addedNodes) {
+              // 忽略纯文本节点（可能是删除标记后恢复的文本）
+              if (node.nodeType === Node.TEXT_NODE) {
+                continue;
+              }
+              
+              // 检查是否是标记元素
+              if (node.nodeType === Node.ELEMENT_NODE && node.classList && node.classList.contains('word-mark')) {
+                continue;
+              }
+              
+              // 检查是否有实际的新内容
+              if (node.nodeType === Node.ELEMENT_NODE && node.textContent) {
+                hasNewContent = true;
+                break;
+              }
             }
           }
+          if (hasNewContent) break;
         }
-        if (hasNewContent) break;
-      }
 
       if (hasNewContent) {
         // 使用防抖避免频繁重新标记
@@ -615,10 +626,15 @@ class WordMarker {
   // 移除所有相同单词的标记
   async removeAllMarksForWord(word) {
     try {
-      // 1. 从单词本中删除该单词
+      // 1. 暂时断开 MutationObserver，避免重新标记
+      if (this.mutationObserver) {
+        this.mutationObserver.disconnect();
+      }
+      
+      // 2. 从单词本中删除该单词
       await this.removeWordFromDictionary(word);
       
-      // 2. 收集所有需要删除的标记ID
+      // 3. 收集所有需要删除的标记ID（从Map中）
       const markIdsToRemove = [];
       for (const [id, data] of this.markedWords.entries()) {
         if (data.text === word) {
@@ -626,12 +642,24 @@ class WordMarker {
         }
       }
       
-      // 3. 从Map中删除所有相关标记
+      // 4. 从DOM中查找所有包含该单词的标记元素（包括未在Map中的）
+      const allMarkElements = document.querySelectorAll('.word-mark');
+      allMarkElements.forEach(markElement => {
+        const markId = markElement.dataset.markId;
+        const textContent = markElement.textContent.trim();
+        
+        // 如果元素包含该单词且ID不在已收集列表中，添加到列表
+        if (textContent === word && !markIdsToRemove.includes(markId)) {
+          markIdsToRemove.push(markId);
+        }
+      });
+      
+      // 5. 从Map中删除所有相关标记
       markIdsToRemove.forEach(id => {
         this.markedWords.delete(id);
       });
       
-      // 4. 从DOM中移除所有相关标记
+      // 6. 从DOM中移除所有相关标记
       markIdsToRemove.forEach(id => {
         const markElement = document.querySelector(`[data-mark-id="${id}"]`);
         if (markElement) {
@@ -655,17 +683,31 @@ class WordMarker {
         }
       });
       
-      // 5. 通知background移除所有相关标记
+      // 7. 通知background移除所有相关标记
       try {
-        chrome.runtime.sendMessage({
-          type: 'remove_all_marks_for_word',
-          word
+        await new Promise((resolve, reject) => {
+          chrome.runtime.sendMessage({
+            type: 'remove_all_marks_for_word',
+            word
+          }, (response) => {
+            if (chrome.runtime.lastError) {
+              return reject(chrome.runtime.lastError);
+            }
+            resolve(response);
+          });
         });
       } catch (error) {
         if (!error.message.includes('Extension context invalidated')) {
           console.error('移除所有标记通知失败:', error);
         }
       }
+      
+      // 8. 重新连接 MutationObserver（等待DOM操作完成）
+      setTimeout(() => {
+        if (this.mutationObserver) {
+          this.setupMutationObserver();
+        }
+      }, 500);
       
     } catch (error) {
       console.error('移除所有标记失败:', error);
@@ -674,31 +716,45 @@ class WordMarker {
         console.log('扩展上下文已销毁，跳过删除标记');
         // 仍然尝试清理DOM
         const wordToRemove = word;
-        // 收集所有需要删除的标记ID
-        const markIdsToRemove = [];
-        for (const [id, data] of this.markedWords.entries()) {
-          if (data.text === wordToRemove) {
-            markIdsToRemove.push(id);
-          }
-        }
         
-        // 从DOM中移除所有相关标记
-        markIdsToRemove.forEach(id => {
-          const markElement = document.querySelector(`[data-mark-id="${id}"]`);
-          if (markElement) {
+        // 从DOM中查找所有包含该单词的标记元素
+        const allMarkElements = document.querySelectorAll('.word-mark');
+        allMarkElements.forEach(markElement => {
+          const textContent = markElement.textContent.trim();
+          
+          if (textContent === wordToRemove) {
             const newTextNode = document.createTextNode(wordToRemove);
             markElement.replaceWith(newTextNode);
+            
+            // 从Map中删除
+            const markId = markElement.dataset.markId;
+            if (markId) {
+              this.markedWords.delete(markId);
+            }
           }
-          // 从Map中删除
-          this.markedWords.delete(id);
         });
       }
+      
+      // 确保重新连接 MutationObserver
+      setTimeout(() => {
+        if (this.mutationObserver) {
+          this.setupMutationObserver();
+        }
+      }, 1500);
     }
   }
   
   async removeMark(markId) {
     const markData = this.markedWords.get(markId);
-    if (!markData) return;
+    if (!markData) {
+      // 如果Map中没有找到标记数据，尝试从DOM中获取
+      const markElement = document.querySelector(`[data-mark-id="${markId}"]`);
+      if (markElement) {
+        const word = markElement.textContent.trim();
+        await this.removeAllMarksForWord(word);
+      }
+      return;
+    }
 
     try {
       // 移除所有相同单词的标记
@@ -710,23 +766,35 @@ class WordMarker {
         console.log('扩展上下文已销毁，跳过删除标记');
         // 仍然尝试清理DOM和Map
         const wordToRemove = markData.text;
-        const markIdsToRemove = [];
-        for (const [id, data] of this.markedWords.entries()) {
-          if (data.text === wordToRemove) {
-            markIdsToRemove.push(id);
-          }
+        
+        // 暂时断开 MutationObserver
+        if (this.mutationObserver) {
+          this.mutationObserver.disconnect();
         }
         
-        // 从DOM中移除所有相关标记
-        markIdsToRemove.forEach(id => {
-          const markElement = document.querySelector(`[data-mark-id="${id}"]`);
-          if (markElement) {
+        // 从DOM中查找所有包含该单词的标记元素
+        const allMarkElements = document.querySelectorAll('.word-mark');
+        allMarkElements.forEach(markElement => {
+          const textContent = markElement.textContent.trim();
+          
+          if (textContent === wordToRemove) {
             const newTextNode = document.createTextNode(wordToRemove);
             markElement.replaceWith(newTextNode);
+            
+            // 从Map中删除
+            const elementMarkId = markElement.dataset.markId;
+            if (elementMarkId) {
+              this.markedWords.delete(elementMarkId);
+            }
           }
-          // 从Map中删除
-          this.markedWords.delete(id);
         });
+        
+        // 重新连接 MutationObserver（等待DOM操作完成）
+        setTimeout(() => {
+          if (this.mutationObserver) {
+            this.setupMutationObserver();
+          }
+        }, 500);
       }
     }
   }
