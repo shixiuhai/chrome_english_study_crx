@@ -63,10 +63,13 @@ class WordMarker {
     this.initPageMarksPromise = null;
     this.initPageMarksCompleted = false;
     this.pendingSelection = null;
+    this.mutationObserver = null;
+    this.remarkDebounceTimer = null;
     this.init();
     this.checkDomain().then(isAllowed => {
       if (this.isContextValid && isAllowed) {
         this.initPageMarksAsync();
+        this.setupMutationObserver();
       }
     }).catch(error => {
       if (error.message.includes('Extension context invalidated')) {
@@ -112,6 +115,117 @@ class WordMarker {
       // 其他错误
       console.error('检查域名时出错:', error);
       return true; // 默认允许，避免因错误导致功能失效
+    }
+  }
+
+  // 设置DOM变化监听器，处理动态加载的内容
+  setupMutationObserver() {
+    if (this.mutationObserver) {
+      this.mutationObserver.disconnect();
+    }
+
+    const observerOptions = {
+      childList: true,
+      subtree: true,
+      attributes: false,
+      characterData: false
+    };
+
+    this.mutationObserver = new MutationObserver((mutations) => {
+      let hasNewContent = false;
+      
+      for (const mutation of mutations) {
+        if (mutation.type === 'childList' && mutation.addedNodes.length > 0) {
+          // 检查是否有新增的文本节点
+          for (const node of mutation.addedNodes) {
+            if (node.nodeType === Node.TEXT_NODE || (node.nodeType === Node.ELEMENT_NODE && node.textContent)) {
+              hasNewContent = true;
+              break;
+            }
+          }
+        }
+        if (hasNewContent) break;
+      }
+
+      if (hasNewContent) {
+        // 使用防抖避免频繁重新标记
+        if (this.remarkDebounceTimer) {
+          clearTimeout(this.remarkDebounceTimer);
+        }
+        
+        this.remarkDebounceTimer = setTimeout(() => {
+          this.remarkExistingWords();
+        }, 1000);
+      }
+    });
+
+    // 开始监听整个文档
+    this.mutationObserver.observe(document.body, observerOptions);
+  }
+
+  // 重新标记已有的单词（用于动态加载的内容）
+  async remarkExistingWords() {
+    try {
+      const marks = await this.getMarks();
+      if (!marks || Object.keys(marks).length === 0) {
+        return;
+      }
+
+      const markValues = Object.values(marks);
+      const wordList = markValues.map(m => m.text).filter(text => text && text.trim());
+      if (wordList.length === 0) {
+        return;
+      }
+
+      const regex = buildMultiPatternRegex(wordList);
+
+      const walker = document.createTreeWalker(
+        document.body,
+        NodeFilter.SHOW_TEXT,
+        {
+          acceptNode: (node) => {
+            const parent = node.parentNode;
+            if (parent.nodeName === 'SCRIPT' || parent.nodeName === 'STYLE' || 
+                parent.nodeName === 'NOSCRIPT' || parent.classList?.contains('word-mark')) {
+              return NodeFilter.FILTER_REJECT;
+            }
+            if (!node.nodeValue || !node.nodeValue.trim()) {
+              return NodeFilter.FILTER_REJECT;
+            }
+            return NodeFilter.FILTER_ACCEPT;
+          }
+        },
+        false
+      );
+
+      const textNodes = [];
+      let node;
+      let nodeCount = 0;
+      const MAX_NODES = 500;
+
+      while ((node = walker.nextNode()) && nodeCount < MAX_NODES) {
+        textNodes.push(node);
+        nodeCount++;
+      }
+
+      const marksMap = {};
+      markValues.forEach(mark => {
+        marksMap[mark.text.toLowerCase()] = mark;
+      });
+
+      const BATCH_SIZE = 50;
+      for (let i = 0; i < textNodes.length; i += BATCH_SIZE) {
+        const batch = textNodes.slice(i, i + BATCH_SIZE);
+        this.processTextNodesBatch(batch, regex, marksMap);
+        await new Promise(resolve => setTimeout(resolve, 0));
+      }
+    } catch (error) {
+      if (error.message.includes('Extension context invalidated')) {
+        this.isContextValid = false;
+        console.log('扩展上下文已销毁，跳过重新标记');
+      } else {
+        console.error('重新标记时出错:', error);
+      }
     }
   }
 
@@ -274,62 +388,18 @@ class WordMarker {
           }
         });
 
-        await new Promise(resolve => setTimeout(resolve, 500));
+        // 增加初始延迟，等待动态内容加载
+        await new Promise(resolve => setTimeout(resolve, 1000));
 
-        const marks = await this.getMarks();
-        if (!marks || Object.keys(marks).length === 0) {
-          this.initPageMarksCompleted = true;
-          return;
-        }
-
-        const markValues = Object.values(marks);
-        const wordList = markValues.map(m => m.text).filter(text => text && text.trim());
-        if (wordList.length === 0) {
-          this.initPageMarksCompleted = true;
-          return;
-        }
-
-        const regex = buildMultiPatternRegex(wordList);
-
-        const walker = document.createTreeWalker(
-          document.body,
-          NodeFilter.SHOW_TEXT,
-          {
-            acceptNode: (node) => {
-              const parent = node.parentNode;
-              if (parent.nodeName === 'SCRIPT' || parent.nodeName === 'STYLE' || 
-                  parent.nodeName === 'NOSCRIPT' || parent.classList?.contains('word-mark')) {
-                return NodeFilter.FILTER_REJECT;
-              }
-              if (!node.nodeValue || !node.nodeValue.trim()) {
-                return NodeFilter.FILTER_REJECT;
-              }
-              return NodeFilter.FILTER_ACCEPT;
-            }
-          },
-          false
-        );
-
-        const textNodes = [];
-        let node;
-        let nodeCount = 0;
-        const MAX_NODES = 500;
-
-        while ((node = walker.nextNode()) && nodeCount < MAX_NODES) {
-          textNodes.push(node);
-          nodeCount++;
-        }
-
-        const marksMap = {};
-        markValues.forEach(mark => {
-          marksMap[mark.text.toLowerCase()] = mark;
-        });
-
-        const BATCH_SIZE = 50;
-        for (let i = 0; i < textNodes.length; i += BATCH_SIZE) {
-          const batch = textNodes.slice(i, i + BATCH_SIZE);
-          this.processTextNodesBatch(batch, regex, marksMap);
-          await new Promise(resolve => setTimeout(resolve, 0));
+        // 多次尝试初始化，确保动态内容也被标记
+        const maxRetries = 3;
+        for (let retry = 0; retry < maxRetries; retry++) {
+          await this.doInitPageMarks();
+          
+          // 如果不是最后一次重试，等待一段时间再尝试
+          if (retry < maxRetries - 1) {
+            await new Promise(resolve => setTimeout(resolve, 2000));
+          }
         }
 
         this.initPageMarksCompleted = true;
@@ -345,6 +415,63 @@ class WordMarker {
     })();
 
     return this.initPageMarksPromise;
+  }
+
+  // 执行实际的页面标记初始化
+  async doInitPageMarks() {
+    const marks = await this.getMarks();
+    if (!marks || Object.keys(marks).length === 0) {
+      return;
+    }
+
+    const markValues = Object.values(marks);
+    const wordList = markValues.map(m => m.text).filter(text => text && text.trim());
+    if (wordList.length === 0) {
+      return;
+    }
+
+    const regex = buildMultiPatternRegex(wordList);
+
+    const walker = document.createTreeWalker(
+      document.body,
+      NodeFilter.SHOW_TEXT,
+      {
+        acceptNode: (node) => {
+          const parent = node.parentNode;
+          if (parent.nodeName === 'SCRIPT' || parent.nodeName === 'STYLE' || 
+              parent.nodeName === 'NOSCRIPT' || parent.classList?.contains('word-mark')) {
+            return NodeFilter.FILTER_REJECT;
+          }
+          if (!node.nodeValue || !node.nodeValue.trim()) {
+            return NodeFilter.FILTER_REJECT;
+          }
+          return NodeFilter.FILTER_ACCEPT;
+        }
+      },
+      false
+    );
+
+    const textNodes = [];
+    let node;
+    let nodeCount = 0;
+    const MAX_NODES = 500;
+
+    while ((node = walker.nextNode()) && nodeCount < MAX_NODES) {
+      textNodes.push(node);
+      nodeCount++;
+    }
+
+    const marksMap = {};
+    markValues.forEach(mark => {
+      marksMap[mark.text.toLowerCase()] = mark;
+    });
+
+    const BATCH_SIZE = 50;
+    for (let i = 0; i < textNodes.length; i += BATCH_SIZE) {
+      const batch = textNodes.slice(i, i + BATCH_SIZE);
+      this.processTextNodesBatch(batch, regex, marksMap);
+      await new Promise(resolve => setTimeout(resolve, 0));
+    }
   }
 
   // 批量处理文本节点
@@ -382,6 +509,21 @@ class WordMarker {
         return;
       }
       
+      // 检查该位置是否已经被标记
+      const parent = textNode.parentNode;
+      if (parent && parent.classList && parent.classList.contains('word-mark')) {
+        return;
+      }
+      
+      // 检查文本节点是否在已标记的元素内
+      let current = textNode.parentNode;
+      while (current && current !== document.body) {
+        if (current.classList && current.classList.contains('word-mark')) {
+          return;
+        }
+        current = current.parentNode;
+      }
+      
       const range = document.createRange();
       
       // 验证range参数有效性
@@ -395,26 +537,16 @@ class WordMarker {
       range.setStart(textNode, validStartIndex);
       range.setEnd(textNode, validEndIndex);
 
-      const selection = window.getSelection();
-      
       // 检查range是否在文档中
       let isRangeInDocument = false;
       try {
-        // 通过检查范围的commonAncestorContainer是否在文档中来验证
         isRangeInDocument = document.contains(range.commonAncestorContainer);
       } catch (e) {
         console.error('检查range是否在文档中失败:', e);
       }
       
-      if (isRangeInDocument) {
-        selection.removeAllRanges();
-        selection.addRange(range);
-      } else {
-        // 如果range不在文档中，创建一个新的range
-        const newRange = document.createRange();
-        newRange.selectNodeContents(textNode);
-        selection.removeAllRanges();
-        selection.addRange(newRange);
+      if (!isRangeInDocument) {
+        return;
       }
 
       const markId = `mark_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
@@ -426,8 +558,6 @@ class WordMarker {
       });
     } catch (e) {
       console.error('标记文本节点失败:', e);
-      // 清除选区，避免影响后续操作
-      window.getSelection().removeAllRanges();
     }
   }
 
@@ -746,10 +876,6 @@ class WordMarker {
   // 标记页面上其他相同的单词/词组（优化版）
   markOtherOccurrences(text, translation) {
     requestAnimationFrame(() => {
-      if (!this.initPageMarksCompleted) {
-        return;
-      }
-      
       const maxOccurrences = 3;
       let occurrencesMarked = 0;
       const maxNodesToProcess = 30;

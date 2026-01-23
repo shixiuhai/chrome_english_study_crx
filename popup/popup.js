@@ -541,6 +541,9 @@ class WordBookConfig {
     // 加载已排除的域名列表
     await this.loadExcludedDomains();
     
+    // 检查当前域名是否被排除，并更新UI
+    await this.updateCurrentDomainStatus();
+    
     // 添加事件监听
     this.setupDomainExclusionEventListeners();
   }
@@ -588,12 +591,39 @@ class WordBookConfig {
     excludedDomains.forEach(domain => {
       const domainTag = document.createElement('div');
       domainTag.className = 'domain-tag';
+      // 如果是当前域名，添加高亮样式
+      const isCurrentDomain = domain === this.currentDomain;
+      if (isCurrentDomain) {
+        domainTag.classList.add('current-domain-highlight');
+      }
       domainTag.innerHTML = `
-        <span>${domain}</span>
+        <span>${domain}${isCurrentDomain ? ' (当前)' : ''}</span>
         <button class="remove-domain-btn" data-domain="${domain}">&times;</button>
       `;
       container.appendChild(domainTag);
     });
+  }
+
+  // 更新当前域名状态（显示排除或移除按钮）
+  async updateCurrentDomainStatus() {
+    const excludedDomains = await this.getExcludedDomains();
+    const isExcluded = excludedDomains.includes(this.currentDomain);
+    
+    const excludeBtn = document.getElementById('excludeDomainBtn');
+    const removeBtn = document.getElementById('removeExclusionBtn');
+    const currentDomainSpan = document.getElementById('currentDomain');
+    
+    if (isExcluded) {
+      // 当前域名已被排除
+      excludeBtn.style.display = 'none';
+      removeBtn.style.display = 'inline-block';
+      currentDomainSpan.classList.add('excluded-status');
+    } else {
+      // 当前域名未被排除
+      excludeBtn.style.display = 'inline-block';
+      removeBtn.style.display = 'none';
+      currentDomainSpan.classList.remove('excluded-status');
+    }
   }
 
   // 添加域名排除事件监听
@@ -601,6 +631,11 @@ class WordBookConfig {
     // 排除当前域名按钮
     document.getElementById('excludeDomainBtn').addEventListener('click', () => {
       this.excludeCurrentDomain();
+    });
+    
+    // 移除当前域名排除按钮
+    document.getElementById('removeExclusionBtn').addEventListener('click', () => {
+      this.removeCurrentDomainExclusion();
     });
     
     // 移除已排除域名按钮（使用事件委托）
@@ -640,7 +675,40 @@ class WordBookConfig {
     
     // 更新UI
     this.renderExcludedDomains(updatedDomains);
+    await this.updateCurrentDomainStatus();
     await this.alert(`已成功排除域名 "${this.currentDomain}"`);
+  }
+
+  // 移除当前域名的排除
+  async removeCurrentDomainExclusion() {
+    if (!this.currentDomain) {
+      await this.alert('无法获取当前域名');
+      return;
+    }
+    
+    const excludedDomains = await this.getExcludedDomains();
+    
+    if (!excludedDomains.includes(this.currentDomain)) {
+      await this.alert('当前域名不在排除列表中');
+      return;
+    }
+    
+    // 显示确认对话框
+    const confirmed = await this.confirm(
+      `确定要移除对当前域名 "${this.currentDomain}" 的排除吗？移除后插件将在此域名上运行。`,
+      '移除排除确认'
+    );
+    
+    if (!confirmed) return;
+    
+    // 从排除列表中移除
+    const updatedDomains = excludedDomains.filter(d => d !== this.currentDomain);
+    await this.saveExcludedDomains(updatedDomains);
+    
+    // 更新UI
+    this.renderExcludedDomains(updatedDomains);
+    await this.updateCurrentDomainStatus();
+    await this.alert(`已成功移除对域名 "${this.currentDomain}" 的排除`);
   }
 
   // 移除已排除的域名
@@ -650,6 +718,7 @@ class WordBookConfig {
     
     await this.saveExcludedDomains(updatedDomains);
     this.renderExcludedDomains(updatedDomains);
+    await this.updateCurrentDomainStatus();
     await this.alert(`已成功移除排除域名 "${domain}"`);
   }
 
