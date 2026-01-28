@@ -347,4 +347,4 @@ TTS_LANG: 'en-US'
 ## 版权信息
 © 2026 英语学习插件开发团队
 - 邮箱: xiuhaishi@gmail.com
-- 开发完成: trace
+- 开发完成: trae
