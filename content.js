@@ -296,6 +296,14 @@ class WordMarker {
     return /[\u4e00-\u9fa5]/.test(text);
   }
 
+  // 新增方法：检测是否只包含标点符号
+  isOnlyPunctuation(text) {
+    // 正则表达式匹配中英文标点符号
+    // 包括：句号(。.)、逗号(，,)、问号(？?)、感叹号(！!)、分号(；;)、冒号(：:)、引号(""''``)、括号(()[]{}())、破折号(--)、省略号(...。。。)等
+    const punctuationRegex = /^[\p{P}\p{S}\s]+$/u;
+    return punctuationRegex.test(text);
+  }
+
   init() {
     // 检查是否已标记，防止重复
     const markCheck = (text) => !this.isAlreadyMarked(text);
@@ -343,6 +351,12 @@ class WordMarker {
 
         const trimmedText = selectedText.trim();
         if (!trimmedText) return;
+        
+        // 检查是否只包含标点符号，如果是则跳过
+        if (this.isOnlyPunctuation(trimmedText)) {
+          console.log('检测到只包含标点符号，跳过标记:', trimmedText);
+          return;
+        }
 
         const wordCount = countWords(trimmedText);
         if (wordCount > 50) {
@@ -936,6 +950,12 @@ class WordMarker {
     // 检查文本是否包含中文，防止添加中文到英文单词表
     if (this.hasChinese(text)) {
       console.log('检测到中文，跳过标记单词:', text);
+      return;
+    }
+    
+    // 检查是否只包含标点符号，如果是则跳过
+    if (this.isOnlyPunctuation(text)) {
+      console.log('检测到只包含标点符号，跳过标记单词:', text);
       return;
     }
     
