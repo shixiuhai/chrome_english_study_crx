@@ -65,10 +65,22 @@ class WordMarker {
     this.pendingSelection = null;
     this.mutationObserver = null;
     this.remarkDebounceTimer = null;
+    console.log('WordMarker初始化开始');
+    
+    // 检查是否为GitHub代码编辑页面
+    if (this.isGitHubCodeEditPage()) {
+      console.log('在GitHub代码编辑页面，禁用WordMarker所有功能');
+      this.init(); // 只初始化事件监听器，后续会在事件处理中禁用
+      return;
+    }
+    
     this.init();
     this.checkDomain().then(isAllowed => {
+      console.log('域名检查结果:', isAllowed);
       if (this.isContextValid && isAllowed) {
+        console.log('开始初始化页面标记');
         this.initPageMarksAsync();
+        console.log('设置DOM变化监听器');
         this.setupMutationObserver();
       }
     }).catch(error => {
@@ -118,8 +130,35 @@ class WordMarker {
     }
   }
 
+  // 检测是否为GitHub代码编辑页面
+  isGitHubCodeEditPage() {
+    const hostname = window.location.hostname;
+    const pathname = window.location.pathname;
+    
+    // 检查是否为GitHub域名
+    if (!hostname.includes('github.com')) {
+      return false;
+    }
+    
+    // 检查URL路径是否包含/edit/（GitHub代码编辑页面的特征）
+    if (!pathname.includes('/edit/')) {
+      return false;
+    }
+    
+    // 简化检测，不需要等待代码编辑器元素加载
+    // 只要是GitHub域名且路径包含/edit/，就认为是编辑页面
+    console.log('检测到GitHub代码编辑页面');
+    return true;
+  }
+
   // 设置DOM变化监听器，处理动态加载的内容
   setupMutationObserver() {
+    // 检查是否为GitHub代码编辑页面，如果是则不设置监听器
+    if (this.isGitHubCodeEditPage()) {
+      console.log('在GitHub代码编辑页面，禁用DOM变化监听器');
+      return;
+    }
+    
     if (this.mutationObserver) {
       this.mutationObserver.disconnect();
     }
@@ -176,6 +215,12 @@ class WordMarker {
 
   // 重新标记已有的单词（用于动态加载的内容）
   async remarkExistingWords() {
+    // 检查是否为GitHub代码编辑页面，如果是则禁用重新标记功能
+    if (this.isGitHubCodeEditPage()) {
+      console.log('在GitHub代码编辑页面，禁用重新标记功能');
+      return;
+    }
+    
     try {
       const marks = await this.getMarks();
       if (!marks || Object.keys(marks).length === 0) {
@@ -273,6 +318,12 @@ class WordMarker {
         this.markTimeout = null;
       }
       
+      // 检查是否为GitHub代码编辑页面，如果是则禁用选中翻译功能
+      if (this.isGitHubCodeEditPage()) {
+        console.log('在GitHub代码编辑页面，禁用选中翻译功能');
+        return;
+      }
+      
       if (selectedText && !event.ctrlKey) {
         const range = selection.getRangeAt(0);
         const container = range.commonAncestorContainer;
@@ -361,6 +412,11 @@ class WordMarker {
     });
     
     document.addEventListener('keydown', (event) => {
+      // 检查是否为GitHub代码编辑页面，如果是则禁用功能
+      if (this.isGitHubCodeEditPage()) {
+        return;
+      }
+      
       if (event.key === 'Escape') {
         if (this.markTimeout) {
           clearTimeout(this.markTimeout);
@@ -383,6 +439,11 @@ class WordMarker {
     });
 
     document.addEventListener('copy', (event) => {
+      // 检查是否为GitHub代码编辑页面，如果是则禁用功能
+      if (this.isGitHubCodeEditPage()) {
+        return;
+      }
+      
       const selection = window.getSelection();
       const selectedText = selection.toString().trim();
       
@@ -431,6 +492,12 @@ class WordMarker {
 
   // 新增方法：异步初始化页面标记（优化版）
   async initPageMarksAsync() {
+    // 检查是否为GitHub代码编辑页面，如果是则禁用页面标记初始化
+    if (this.isGitHubCodeEditPage()) {
+      console.log('在GitHub代码编辑页面，禁用页面标记初始化');
+      return;
+    }
+    
     if (this.initPageMarksPromise) {
       return this.initPageMarksPromise;
     }
@@ -476,6 +543,12 @@ class WordMarker {
 
   // 执行实际的页面标记初始化
   async doInitPageMarks() {
+    // 检查是否为GitHub代码编辑页面，如果是则禁用页面标记初始化
+    if (this.isGitHubCodeEditPage()) {
+      console.log('在GitHub代码编辑页面，禁用页面标记初始化');
+      return;
+    }
+    
     const marks = await this.getMarks();
     if (!marks || Object.keys(marks).length === 0) {
       return;
@@ -848,6 +921,12 @@ class WordMarker {
 
 
   async markWord(selection, text) {
+    // 检查是否为GitHub代码编辑页面，如果是则禁用选中翻译功能
+    if (this.isGitHubCodeEditPage()) {
+      console.log('在GitHub代码编辑页面，禁用选中翻译功能');
+      return;
+    }
+    
     // 检查扩展上下文是否有效
     if (!this.isContextValid) {
       console.log('扩展上下文已销毁，跳过标记单词');
@@ -989,6 +1068,12 @@ class WordMarker {
   
   // 标记页面上其他相同的单词/词组（优化版）
   markOtherOccurrences(text, translation) {
+    // 检查是否为GitHub代码编辑页面，如果是则禁用标记其他出现的单词
+    if (this.isGitHubCodeEditPage()) {
+      console.log('在GitHub代码编辑页面，禁用标记其他出现的单词');
+      return;
+    }
+    
     requestAnimationFrame(() => {
       const maxOccurrences = 3;
       let occurrencesMarked = 0;
